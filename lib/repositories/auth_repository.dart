@@ -8,23 +8,32 @@ class AuthRepository {
   final StorageService _storage;
 
   AuthRepository({ApiService? api, StorageService? storage})
-      : _api     = api     ?? ApiService(),
-        _storage  = storage ?? StorageService();
+      : _api = api ?? ApiService(),
+        _storage = storage ?? StorageService();
 
   Future<ApiResult<DriverModel>> login({
     required String identifier,
     required String password,
   }) async {
     return _api.call<DriverModel>(
-      request: () => _api.post(ApiConstants.login, data: {
-        'identifier': identifier,
-        'password': password,
-      }),
+      request: () => _api.post(
+        ApiConstants.login,
+        data: {
+          'identifier': identifier,
+          'password': password,
+        },
+      ),
       fromJson: (data) {
-        final driver = DriverModel.fromJson(data['driver'] as Map<String, dynamic>);
-        _storage.saveToken(data['token'] as String);
+        final responseData = data['data'] as Map<String, dynamic>;
+
+        final driver = DriverModel.fromJson(
+          responseData['driver'] as Map<String, dynamic>,
+        );
+
+        _storage.saveToken(responseData['token'] as String);
         _storage.saveDriverData(driver.toJson());
         _storage.setLoggedIn(true);
+
         return driver;
       },
     );
@@ -39,7 +48,8 @@ class AuthRepository {
 
   Future<ApiResult<bool>> forgotPassword(String identifier) async {
     return _api.call<bool>(
-      request: () => _api.post(ApiConstants.forgotPassword, data: {'identifier': identifier}),
+      request: () => _api
+          .post(ApiConstants.forgotPassword, data: {'identifier': identifier}),
       fromJson: (_) => true,
     );
   }
@@ -59,7 +69,8 @@ class AuthRepository {
 
   Future<ApiResult<bool>> resendOtp(String identifier) async {
     return _api.call<bool>(
-      request: () => _api.post(ApiConstants.resendOtp, data: {'identifier': identifier}),
+      request: () =>
+          _api.post(ApiConstants.resendOtp, data: {'identifier': identifier}),
       fromJson: (_) => true,
     );
   }

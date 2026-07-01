@@ -2,7 +2,7 @@
 
 **App Name:** FleetCheck  
 **Package:** `com.FleetCheck.Evs`  
-**Base URL:** `https://demo1.evirtualservices.com/fleetcheck/api`  
+**Base URL:** `https://demo1.evirtualservices.com/fleetcheckapp/api/`  
 **Auth:** Bearer Token (JWT) in `Authorization` header  
 **Content-Type:** `application/json`  
 **API Version:** v1  
