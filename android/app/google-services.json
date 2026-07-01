@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1093597179954",
+    "project_id": "fleetcheek",
+    "storage_bucket": "fleetcheek.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1093597179954:android:0a98f97f4c1f3c18468c2b",
+        "android_client_info": {
+          "package_name": "com.fleetCheck.evs"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDYuqeKOBTKPa-5z12K76To34NsdUy_nM8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
