@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -sL -o \"/c/Users/Satish/AppData/Local/Temp/claude/e--flutter-app-fleetcheck/82a73bc4-b1fd-4ca7-9d23-c42dee14a6bf/scratchpad/login_reference.png\" \"https://demo2.evirtualservices.co/fleetcheck/wireframe/images/02_Login_Screen.png\")",
+      "Read(//c/Users/Satish/AppData/Local/Temp/claude/e--flutter-app-fleetcheck/82a73bc4-b1fd-4ca7-9d23-c42dee14a6bf/scratchpad/**)",
+      "Skill(run)",
+      "Skill(run:*)",
+      "Bash(flutter devices *)",
+      "Bash(adb devices *)"
+    ]
+  }
+}

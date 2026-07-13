@@ -1,13 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import '../../blocs/dashboard/dashboard_bloc.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
 import '../../models/driver_model.dart';
 import '../../models/inspection_model.dart';
-import '../../repositories/auth_repository.dart';
-import '../../repositories/inspection_repository.dart';
 import '../../routes/app_router.dart';
+import '../../core/theme/app_responsive.dart';
+import '../../core/theme/app_text_styles.dart';
+
+// Bright accent green used for this screen's positive/active accents
+// (View All link, Pre-Trip stat, active nav state), matching the brand
+// green used on the login screen rather than the app's amber CTA color.
+const _brightGreen = Color(0xFF2E9E5B);
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -17,199 +24,289 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  final _authRepo  = AuthRepository();
-  final _inspRepo  = InspectionRepository();
-
-  DriverModel?        _driver;
-  DriverStats?        _stats;
-  List<ActivityItem>  _recent    = [];
-  bool                _loading   = true;
-  int                 _navIndex  = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    setState(() => _loading = true);
-    _driver = _authRepo.getCachedDriver();
-
-    final statsRes  = await _inspRepo.getDriverStats();
-    final recentRes = await _inspRepo.getRecentActivity();
-
-    if (!mounted) return;
-    setState(() {
-      _stats   = statsRes.data  ?? DriverStats.empty();
-      _recent  = recentRes.data ?? [];
-      _loading = false;
-    });
-  }
-
-  Future<void> _confirmLogout() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: const Text(AppStrings.confirmLogout, textAlign: TextAlign.center,
-            style: TextStyle(fontWeight: FontWeight.w800)),
-        content: const Text(AppStrings.confirmLogoutMessage, textAlign: TextAlign.center),
-        actionsAlignment: MainAxisAlignment.center,
-        actions: [
-          OutlinedButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text(AppStrings.cancel),
-          ),
-          const SizedBox(width: 8),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.danger, foregroundColor: Colors.white),
-            child: const Text(AppStrings.logout),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true) {
-      await _authRepo.logout();
-      if (mounted) context.go(AppRoutes.login);
-    }
-  }
+  static const _scanGradient = LinearGradient(
+    colors: [Color(0xFF1E4D3D), Color(0xFF1A6B4F)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: _loading
-          ? const Center(child: CircularProgressIndicator(color: AppColors.secondary))
-          : RefreshIndicator(
-              onRefresh: _load,
-              color:     AppColors.secondary,
-              child: CustomScrollView(
-                slivers: [
-                  SliverToBoxAdapter(child: _buildHeader()),
-                  SliverToBoxAdapter(child: _buildScanButton()),
-                  SliverToBoxAdapter(child: _buildStats()),
-                  SliverToBoxAdapter(child: _buildRecentActivity()),
-                  const SliverToBoxAdapter(child: SizedBox(height: 100)),
-                ],
-              ),
-            ),
-      bottomNavigationBar: _buildBottomNav(),
+    return BlocBuilder<DashboardBloc, DashboardState>(
+      builder: (context, state) {
+        if (state is DashboardLoading) {
+          return const Scaffold(
+            backgroundColor: AppColors.appbg,
+            body: Center(
+                child: CircularProgressIndicator(color: AppColors.secondary)),
+          );
+        }
+        final loaded = state as DashboardLoaded;
+        return Scaffold(
+          backgroundColor: AppColors.appbg,
+          body: RefreshIndicator(
+            onRefresh: () async {
+              context.read<DashboardBloc>().add(DashboardLoadRequested());
+              await context
+                  .read<DashboardBloc>()
+                  .stream
+                  .firstWhere((s) => s is DashboardLoaded);
+            },
+            color: AppColors.secondary,
+            child: Column(
+              children: [
+                _buildHeader(
+                    context, loaded.driver, loaded.recent.isNotEmpty),
+                Expanded(child: CustomScrollView(
+                  slivers: [
+                    SliverToBoxAdapter(child: _buildStats(loaded.stats)),
+                    SliverToBoxAdapter(child: _buildRecentActivity(loaded.recent)),
+                    SliverToBoxAdapter(
+                        child: SizedBox(
+                            height: AppResponsive.spacing(context, 100))),
+                  ],
+                ),)
+              ],
+            )
+          ),
+        );
+      },
     );
   }
 
-  // ─── Header ─────────────────────────────────────────────
-  Widget _buildHeader() {
-    final driver = _driver;
+  // ─── Header: profile row + date + embedded scan card ─────
+  Widget _buildHeader(
+      BuildContext context, DriverModel? driver, bool hasUnread) {
     return Container(
-      padding: EdgeInsets.fromLTRB(20, MediaQuery.of(context).padding.top + 16, 20, 20),
+      padding: EdgeInsets.fromLTRB(
+        AppResponsive.padding(context, 20),
+        MediaQuery.of(context).padding.top + AppResponsive.padding(context, 16),
+        AppResponsive.padding(context, 20),
+        AppResponsive.padding(context, 20),
+      ),
       decoration: const BoxDecoration(gradient: AppColors.primaryGradient),
       child: Column(
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Avatar
-              Container(
-                width: 50, height: 50,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: AppColors.greenGradient,
-                  border: Border.all(color: Colors.white.withOpacity(0.4), width: 2),
-                ),
-                child: driver?.photoUrl != null
-                    ? ClipOval(child: Image.network(driver!.photoUrl!, fit: BoxFit.cover))
-                    : const Icon(Icons.person_rounded, color: Colors.white, size: 28),
+              // Avatar with online indicator
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Container(
+                    width: AppResponsive.scale(context, 50),
+                    height: AppResponsive.scale(context, 50),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: AppColors.greenGradient,
+                      border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.4), width: 2),
+                    ),
+                    child: driver?.photoUrl != null
+                        ? ClipOval(
+                            child: Image.network(driver!.photoUrl!,
+                                fit: BoxFit.cover))
+                        : Icon(Icons.person_rounded,
+                            color: Colors.white,
+                            size: AppResponsive.scale(context, 28)),
+                  ),
+                  Positioned(
+                    bottom: 0,
+                    right: 0,
+                    child: Container(
+                      width: AppResponsive.scale(context, 12),
+                      height: AppResponsive.scale(context, 12),
+                      decoration: BoxDecoration(
+                        color: _brightGreen,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: AppColors.primary, width: 2),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 12),
+              SizedBox(width: AppResponsive.spacing(context, 12)),
 
               // Name + ID
               Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('Welcome back!',
-                      style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.6))),
-                  Text(driver?.fullName ?? 'Driver',
-                      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Colors.white)),
-                  Row(children: [
-                    _Pill(driver?.employeeId ?? '—', color: Colors.white.withOpacity(0.2)),
-                    const SizedBox(width: 6),
-                    _Pill('Active', color: AppColors.secondary.withOpacity(0.6)),
-                  ]),
-                ]),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(AppStrings.welcomeBackLabel.toUpperCase(),
+                          style: TextStyle(
+                              fontSize: AppResponsive.text(context, 11),
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.6,
+                              color: Colors.white.withValues(alpha: 0.6))),
+                      Text(driver?.fullName ?? AppStrings.defaultDriverName,
+                          style: AppTextStyles.heading2(context,
+                              color: Colors.white)),
+                      SizedBox(height: AppResponsive.spacing(context, 4)),
+                      _Pill(AppStrings.empIdLabel(driver?.employeeId ?? '—'),
+                          color: Colors.white.withValues(alpha: 0.15)),
+                    ]),
               ),
 
               // Notification bell
               GestureDetector(
                 onTap: () => context.push(AppRoutes.notifications),
-                child: Stack(children: [
-                  const Icon(Icons.notifications_none_rounded, color: Colors.white, size: 28),
-                  Positioned(top: 0, right: 0,
-                    child: Container(width: 8, height: 8,
-                      decoration: const BoxDecoration(color: AppColors.amber, shape: BoxShape.circle))),
+                child: Stack(clipBehavior: Clip.none, children: [
+                  Container(
+                    padding: EdgeInsets.all(AppResponsive.padding(context, 8)),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(Icons.notifications_none_rounded,
+                        color: Colors.white,
+                        size: AppResponsive.scale(context, 22)),
+                  ),
+                  if (hasUnread)
+                    Positioned(
+                        top: -2,
+                        right: -2,
+                        child: Container(
+                            width: AppResponsive.scale(context, 10),
+                            height: AppResponsive.scale(context, 10),
+                            decoration: BoxDecoration(
+                                color: AppColors.danger,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                    color: AppColors.primary, width: 1.5)))),
                 ]),
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: AppResponsive.spacing(context, 14)),
           // Date & time row
-          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-            Text(DateFormat('EEEE, MMM d, yyyy').format(DateTime.now()),
-                style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.6))),
-            Text(DateFormat('hh:mm a').format(DateTime.now()),
-                style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.6))),
-          ]),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+                '${DateFormat('MMM d, yyyy').format(DateTime.now())} | '
+                '${DateFormat('hh:mm a').format(DateTime.now())}',
+                style: AppTextStyles.bodySmall(context,
+                    color: Colors.white.withValues(alpha: 0.55))),
+          ),
+          SizedBox(height: AppResponsive.spacing(context, 18)),
+
+          // ── Embedded "Start Inspection / Scan QR Code" card ──
+          GestureDetector(
+            onTap: () => context.push(AppRoutes.qrScanner),
+            child: Container(
+              padding: EdgeInsets.all(AppResponsive.padding(context, 16)),
+              decoration: BoxDecoration(
+                gradient: _scanGradient,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+              ),
+              child: Row(children: [
+                Container(
+                  width: AppResponsive.scale(context, 52),
+                  height: AppResponsive.scale(context, 52),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(Icons.qr_code_scanner_rounded,
+                      color: Colors.white,
+                      size: AppResponsive.scale(context, 26)),
+                ),
+                SizedBox(width: AppResponsive.spacing(context, 14)),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(AppStrings.startInspection.toUpperCase(),
+                          style: TextStyle(
+                              fontSize: AppResponsive.text(context, 10),
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.6,
+                              color: Colors.white.withValues(alpha: 0.6))),
+                      Text(AppStrings.scanQrCode,
+                          style: AppTextStyles.heading3(context,
+                              color: Colors.white)),
+                      SizedBox(height: AppResponsive.spacing(context, 2)),
+                      Text(AppStrings.scanQrSubtitle,
+                          style: AppTextStyles.bodySmall(context,
+                              color: Colors.white.withValues(alpha: 0.55))),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: EdgeInsets.all(AppResponsive.padding(context, 10)),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(Icons.arrow_forward_rounded,
+                      color: Colors.white,
+                      size: AppResponsive.scale(context, 18)),
+                ),
+              ]),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  // ─── Scan QR button ──────────────────────────────────────
-  Widget _buildScanButton() => Padding(
-    padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-    child: GestureDetector(
-      onTap: () => context.push(AppRoutes.qrScanner),
-      child: Container(
-        height: 60,
-        decoration: BoxDecoration(
-          gradient: AppColors.greenGradient,
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: [BoxShadow(color: AppColors.secondary.withOpacity(0.3), blurRadius: 16, offset: const Offset(0, 6))],
-        ),
-        child: const Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.qr_code_scanner_rounded, color: Colors.white, size: 26),
-            SizedBox(width: 10),
-            Text(AppStrings.scanQrCode,
-                style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w800)),
-          ],
-        ),
-      ),
-    ),
-  );
-
   // ─── Stats 4-box grid ────────────────────────────────────
-  Widget _buildStats() {
-    final s = _stats ?? DriverStats.empty();
+  Widget _buildStats(DriverStats s) {
     final boxes = [
-      _StatBox(label: AppStrings.totalAssigned,    value: s.totalAssigned,    color: AppColors.primary,  icon: Icons.assignment_rounded),
-      _StatBox(label: AppStrings.preTripCompleted, value: s.preTripCompleted, color: AppColors.secondary, icon: Icons.wb_sunny_rounded),
-      _StatBox(label: AppStrings.postTripCompleted,value: s.postTripCompleted,color: const Color(0xFF7C3AED), icon: Icons.nights_stay_rounded),
-      _StatBox(label: AppStrings.pendingInspections,value: s.pending,         color: AppColors.amber,    icon: Icons.pending_actions_rounded),
+      _StatBox(
+          label: AppStrings.totalInspectionsLabel,
+          value: s.totalAssigned,
+          color: AppColors.info,
+          icon: Icons.bar_chart_rounded),
+      _StatBox(
+          label: AppStrings.preTripShort,
+          value: s.preTripCompleted,
+          color: _brightGreen,
+          icon: Icons.wb_sunny_rounded),
+      _StatBox(
+          label: AppStrings.postTripShort,
+          value: s.postTripCompleted,
+          color: const Color(0xFF7C3AED),
+          icon: Icons.nights_stay_rounded),
+      _StatBox(
+          label: AppStrings.pendingInspections,
+          value: s.pending,
+          color: AppColors.amber,
+          icon: Icons.hourglass_bottom_rounded),
     ];
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+      padding: EdgeInsets.fromLTRB(AppResponsive.padding(context, 20),
+          AppResponsive.padding(context, 20),
+          AppResponsive.padding(context, 20), 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Quick Stats', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(AppStrings.quickStats,
+                  style: AppTextStyles.heading3(context,
+                      color: AppColors.primary)),
+              GestureDetector(
+                onTap: () => context.push(AppRoutes.history),
+                child: Row(children: [
+                  Text(AppStrings.viewAll,
+                      style: AppTextStyles.label(context, color: _brightGreen)),
+                  Icon(Icons.chevron_right_rounded,
+                      color: _brightGreen,
+                      size: AppResponsive.scale(context, 18)),
+                ]),
+              ),
+            ],
+          ),
+          SizedBox(height: AppResponsive.spacing(context, 12)),
           GridView.count(
-            crossAxisCount:    2,
-            crossAxisSpacing:  12,
-            mainAxisSpacing:   12,
-            childAspectRatio:  1.45,
+            crossAxisCount: 2,
+            crossAxisSpacing: AppResponsive.spacing(context, 12),
+            mainAxisSpacing: AppResponsive.spacing(context, 12),
+            childAspectRatio: 2,
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             children: boxes.map((b) => _StatCard(box: b)).toList(),
@@ -220,103 +317,101 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   // ─── Recent activity ─────────────────────────────────────
-  Widget _buildRecentActivity() => Padding(
-    padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  Widget _buildRecentActivity(List<ActivityItem> recent) => Padding(
+        padding: EdgeInsets.fromLTRB(AppResponsive.padding(context, 20),
+            AppResponsive.padding(context, 20),
+            AppResponsive.padding(context, 20), 0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(AppStrings.recentActivity,
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-            TextButton(
-              onPressed: () => context.push(AppRoutes.history),
-              style: TextButton.styleFrom(foregroundColor: AppColors.secondary),
-              child: const Text('View All', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(AppStrings.recentActivity,
+                    style: AppTextStyles.heading3(context,
+                        color: AppColors.primary)),
+                GestureDetector(
+                  onTap: () => context.push(AppRoutes.history),
+                  child: Icon(Icons.chevron_right_rounded,
+                      color: AppColors.textSecondary,
+                      size: AppResponsive.scale(context, 20)),
+                ),
+              ],
             ),
+            SizedBox(height: AppResponsive.spacing(context, 8)),
+            if (recent.isEmpty)
+              Container(
+                padding: EdgeInsets.all(AppResponsive.padding(context, 24)),
+                decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.04),
+                          blurRadius: 10,
+                          offset: const Offset(0, 3)),
+                    ]),
+                child: Center(
+                  child: Column(children: [
+                    Icon(Icons.inbox_outlined,
+                        size: AppResponsive.scale(context, 36),
+                        color: AppColors.textSecondary),
+                    SizedBox(height: AppResponsive.spacing(context, 8)),
+                    Text(AppStrings.noRecentInspections,
+                        style: AppTextStyles.body(context,
+                            color: AppColors.textSecondary)),
+                  ]),
+                ),
+              )
+            else
+              ...(recent.map((item) => _ActivityCard(item: item))),
           ],
         ),
-        const SizedBox(height: 8),
-        if (_recent.isEmpty)
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.border)),
-            child: const Center(
-              child: Column(children: [
-                Icon(Icons.inbox_outlined, size: 36, color: AppColors.textSecondary),
-                SizedBox(height: 8),
-                Text('No recent inspections.', style: TextStyle(color: AppColors.textSecondary)),
-              ]),
-            ),
-          )
-        else
-          ...(_recent.map((item) => _ActivityCard(item: item))),
-      ],
-    ),
-  );
+      );
+}
 
-  // ─── Bottom nav ──────────────────────────────────────────
-  Widget _buildBottomNav() {
-    final items = [
-      _NavItem(icon: Icons.home_rounded,          label: 'Home'),
-      _NavItem(icon: Icons.history_rounded,        label: 'History'),
-      _NavItem(icon: Icons.notifications_rounded,  label: 'Alerts'),
-      _NavItem(icon: Icons.person_rounded,         label: 'Profile'),
-      _NavItem(icon: Icons.logout_rounded,         label: 'Logout'),
-    ];
-
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.primary,
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 12, offset: const Offset(0, -3))],
-      ),
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: List.generate(items.length, (i) => _NavButton(
-              item:     items[i],
-              selected: _navIndex == i,
-              onTap:    () {
-                if (i == 4) { _confirmLogout(); return; }
-                setState(() => _navIndex = i);
-                switch (i) {
-                  case 0: break; // already on dashboard
-                  case 1: context.push(AppRoutes.history);
-                  case 2: context.push(AppRoutes.notifications);
-                  case 3: context.push(AppRoutes.profile);
-                }
-              },
-            )),
-          ),
-        ),
-      ),
-    );
-  }
+// ─── Helper: relative "time ago" formatting ───────────────
+String _relativeTime(DateTime date) {
+  final diff = DateTime.now().difference(date);
+  if (diff.inMinutes < 1) return AppStrings.justNow;
+  if (diff.inMinutes < 60) return AppStrings.agoMinutes(diff.inMinutes);
+  if (diff.inHours < 24) return AppStrings.agoHours(diff.inHours);
+  return AppStrings.agoDays(diff.inDays);
 }
 
 // ─── Helper data classes ──────────────────────────────────
 
-class _StatBox { final String label; final int value; final Color color; final IconData icon;
-  const _StatBox({required this.label, required this.value, required this.color, required this.icon}); }
-
-class _NavItem { final IconData icon; final String label;
-  const _NavItem({required this.icon, required this.label}); }
+class _StatBox {
+  final String label;
+  final int value;
+  final Color color;
+  final IconData icon;
+  const _StatBox(
+      {required this.label,
+      required this.value,
+      required this.color,
+      required this.icon});
+}
 
 // ─── Sub-widgets ──────────────────────────────────────────
 
 class _Pill extends StatelessWidget {
-  final String text; final Color color;
+  final String text;
+  final Color color;
   const _Pill(this.text, {required this.color});
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-    decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(99)),
-    child: Text(text, style: const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.w700)),
-  );
+        padding: EdgeInsets.symmetric(
+            horizontal: AppResponsive.padding(context, 10),
+            vertical: AppResponsive.padding(context, 3)),
+        decoration: BoxDecoration(
+            color: color, borderRadius: BorderRadius.circular(99)),
+        child: Text(text,
+            style: TextStyle(
+                fontSize: AppResponsive.text(context, 11),
+                color: Colors.white,
+                fontWeight: FontWeight.w700)),
+      );
 }
 
 class _StatCard extends StatelessWidget {
@@ -324,21 +419,52 @@ class _StatCard extends StatelessWidget {
   const _StatCard({super.key, required this.box});
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(16),
-    decoration: BoxDecoration(
-      color: AppColors.surface,
-      borderRadius: BorderRadius.circular(14),
-      border: Border.all(color: AppColors.border),
-      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 6)],
-    ),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Container(width: 36, height: 36, decoration: BoxDecoration(color: box.color.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
-          child: Icon(box.icon, color: box.color, size: 20)),
-      const Spacer(),
-      Text('${box.value}', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900, color: box.color)),
-      Text(box.label, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary, fontWeight: FontWeight.w600)),
-    ]),
-  );
+        padding: EdgeInsets.all(AppResponsive.padding(context, 16)),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 10,
+                offset: const Offset(0, 3)),
+          ],
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Container(
+                width: AppResponsive.scale(context, 40),
+                height: AppResponsive.scale(context, 40),
+                decoration: BoxDecoration(
+                    color: box.color.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10)),
+                child: Icon(box.icon,
+                    color: box.color, size: AppResponsive.scale(context, 20))),
+            SizedBox(width: AppResponsive.spacing(context, 10)),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('${box.value}',
+                      style: TextStyle(
+                          fontSize: AppResponsive.text(context, 24),
+                          fontWeight: FontWeight.w800,
+                          color: box.color)),
+                  Text(box.label,
+                      style: TextStyle(
+                          fontSize: AppResponsive.text(context, 11),
+                          color: AppColors.textSecondary,
+                          fontWeight: FontWeight.w600),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
 }
 
 class _ActivityCard extends StatelessWidget {
@@ -347,48 +473,56 @@ class _ActivityCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isPreTrip = item.type == 'pre_trip';
-    final col       = isPreTrip ? AppColors.secondary : AppColors.primary;
-    final statusCol = item.status == 'completed' ? AppColors.secondary : item.status == 'pending' ? AppColors.amber : AppColors.danger;
+    final isCompleted = item.status == 'completed';
+    final statusCol = isCompleted
+        ? _brightGreen
+        : item.status == 'pending'
+            ? AppColors.amber
+            : AppColors.danger;
+    final title =
+        '${isPreTrip ? AppStrings.preTrip : AppStrings.postTrip} ${item.status}';
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.border)),
+      margin: EdgeInsets.only(bottom: AppResponsive.spacing(context, 10)),
+      padding: EdgeInsets.all(AppResponsive.padding(context, 14)),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withValues(alpha: 0.03),
+              blurRadius: 8,
+              offset: const Offset(0, 2)),
+        ],
+      ),
       child: Row(children: [
-        Container(width: 42, height: 42, decoration: BoxDecoration(color: col.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
-            child: Icon(isPreTrip ? Icons.wb_sunny_rounded : Icons.nights_stay_rounded, color: col, size: 22)),
-        const SizedBox(width: 12),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(item.inspectionId, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.primary, fontFamily: 'monospace')),
-          Text(item.vehicleNumber, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+        Container(
+            width: AppResponsive.scale(context, 42),
+            height: AppResponsive.scale(context, 42),
+            decoration: BoxDecoration(
+                color: statusCol.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10)),
+            child: Icon(Icons.local_shipping_rounded,
+                color: statusCol, size: AppResponsive.scale(context, 22))),
+        SizedBox(width: AppResponsive.spacing(context, 12)),
+        Expanded(
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(title,
+              style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: AppResponsive.text(context, 13),
+                  color: AppColors.primary)),
+          Text(item.vehicleNumber,
+              style: TextStyle(
+                  fontSize: AppResponsive.text(context, 12),
+                  color: AppColors.textSecondary)),
         ])),
-        Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          decoration: BoxDecoration(color: statusCol.withOpacity(0.1), borderRadius: BorderRadius.circular(99)),
-          child: Text(_capitalize(item.status), style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: statusCol))),
+        Text(_relativeTime(item.date),
+            style: TextStyle(
+                fontSize: AppResponsive.text(context, 11),
+                color: AppColors.textSecondary,
+                fontWeight: FontWeight.w500)),
       ]),
     );
   }
-  String _capitalize(String s) => s.isEmpty ? s : '${s[0].toUpperCase()}${s.substring(1)}';
-}
-
-class _NavButton extends StatelessWidget {
-  final _NavItem item; final bool selected; final VoidCallback onTap;
-  const _NavButton({required this.item, required this.selected, required this.onTap});
-  @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: onTap,
-    child: AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: selected ? AppColors.secondary.withOpacity(0.2) : Colors.transparent,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Icon(item.icon, color: selected ? AppColors.accent : Colors.white.withOpacity(0.5), size: 24),
-        const SizedBox(height: 3),
-        Text(item.label, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700,
-            color: selected ? AppColors.accent : Colors.white.withOpacity(0.5))),
-      ]),
-    ),
-  );
 }

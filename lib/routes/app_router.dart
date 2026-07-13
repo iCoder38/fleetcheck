@@ -1,6 +1,17 @@
-import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import '../core/services/storage_service.dart';
+import '../repositories/auth_repository.dart';
+import '../repositories/inspection_repository.dart';
+import '../blocs/auth/login/login_bloc.dart';
+import '../blocs/auth/verify_otp/verify_otp_bloc.dart';
+import '../blocs/auth/forgot_password/forgot_password_bloc.dart';
+import '../blocs/auth/create_password/create_password_bloc.dart';
+import '../blocs/dashboard/dashboard_bloc.dart';
+import '../blocs/inspection/inspection_submit/inspection_submit_bloc.dart';
+import '../blocs/history/inspection_history_detail/inspection_history_detail_bloc.dart';
+import '../blocs/profile/driver_profile_bloc.dart';
+import '../blocs/notifications/notifications_bloc.dart';
 import '../screens/auth/splash_screen.dart';
 import '../screens/auth/intro_screen.dart';
 import '../screens/auth/login_screen.dart';
@@ -21,6 +32,7 @@ import '../screens/notifications/notifications_screen.dart';
 import '../screens/history/inspection_history_screen.dart';
 import '../screens/history/inspection_history_detail_screen.dart';
 import '../screens/help/help_support_screen.dart';
+import '../screens/main_scaffold.dart';
 import '../models/inspection_model.dart';
 
 class AppRoutes {
@@ -59,32 +71,79 @@ final GoRouter appRouter = GoRouter(
     ),
     GoRoute(
       path: AppRoutes.login,
-      builder: (_, __) => const LoginScreen(),
+      builder: (_, __) => BlocProvider(
+        create: (ctx) => LoginBloc(ctx.read<AuthRepository>()),
+        child: const LoginScreen(),
+      ),
     ),
     GoRoute(
       path: AppRoutes.forgotPassword,
-      builder: (_, __) => const ForgotPasswordScreen(),
+      builder: (_, __) => BlocProvider(
+        create: (ctx) => ForgotPasswordBloc(ctx.read<AuthRepository>()),
+        child: const ForgotPasswordScreen(),
+      ),
     ),
     GoRoute(
       path: AppRoutes.verifyOtp,
       builder: (context, state) {
         final identifier = state.extra as String? ?? '';
-        return VerifyOtpScreen(identifier: identifier);
+        return BlocProvider(
+          create: (ctx) => VerifyOtpBloc(ctx.read<AuthRepository>()),
+          child: VerifyOtpScreen(identifier: identifier),
+        );
       },
     ),
     GoRoute(
       path: AppRoutes.createPassword,
       builder: (context, state) {
         final extra = state.extra as Map<String, String>? ?? {};
-        return CreatePasswordScreen(
-          identifier: extra['identifier'] ?? '',
-          resetToken: extra['reset_token'] ?? '',
+        return BlocProvider(
+          create: (ctx) => CreatePasswordBloc(ctx.read<AuthRepository>()),
+          child: CreatePasswordScreen(
+            identifier: extra['identifier'] ?? '',
+            resetToken: extra['reset_token'] ?? '',
+          ),
         );
       },
     ),
-    GoRoute(
-      path: AppRoutes.dashboard,
-      builder: (_, __) => const DashboardScreen(),
+    ShellRoute(
+      builder: (context, state, child) => MainScaffold(child: child),
+      routes: [
+        GoRoute(
+          path: AppRoutes.dashboard,
+          builder: (_, __) => BlocProvider(
+            create: (ctx) => DashboardBloc(
+                ctx.read<AuthRepository>(), ctx.read<InspectionRepository>())
+              ..add(DashboardLoadRequested()),
+            child: const DashboardScreen(),
+          ),
+        ),
+        GoRoute(
+          path: AppRoutes.history,
+          builder: (_, __) => const InspectionHistoryScreen(),
+        ),
+        GoRoute(
+          path: AppRoutes.notifications,
+          builder: (_, __) => BlocProvider(
+            create: (ctx) => NotificationsBloc(ctx.read<InspectionRepository>())
+              ..add(NotificationsLoadRequested()),
+            child: const NotificationsScreen(),
+          ),
+        ),
+        GoRoute(
+          path: AppRoutes.profile,
+          builder: (_, __) => BlocProvider(
+            create: (ctx) => DriverProfileBloc(
+                ctx.read<AuthRepository>(), ctx.read<InspectionRepository>())
+              ..add(ProfileLoadRequested()),
+            child: const DriverProfileScreen(),
+          ),
+        ),
+        GoRoute(
+          path: AppRoutes.help,
+          builder: (_, __) => const HelpSupportScreen(),
+        ),
+      ],
     ),
     GoRoute(
       path: AppRoutes.qrScanner,
@@ -124,6 +183,7 @@ final GoRouter appRouter = GoRouter(
         return DefectReportScreen(
           damagedItems:    extra['damagedItems'] as List<String>,
           existingDefects: extra['defects'] as List<DefectReport>? ?? [],
+          vehicleNumber:   extra['vehicleNumber'] as String? ?? '',
         );
       },
     ),
@@ -138,7 +198,12 @@ final GoRouter appRouter = GoRouter(
       path: AppRoutes.inspectionReview,
       builder: (context, state) {
         final extra = state.extra as Map<String, dynamic>;
-        return InspectionReviewScreen(submission: extra['submission'] as InspectionSubmission);
+        return BlocProvider(
+          create: (ctx) =>
+              InspectionSubmitBloc(ctx.read<InspectionRepository>()),
+          child: InspectionReviewScreen(
+              submission: extra['submission'] as InspectionSubmission),
+        );
       },
     ),
     GoRoute(
@@ -149,27 +214,16 @@ final GoRouter appRouter = GoRouter(
       },
     ),
     GoRoute(
-      path: AppRoutes.profile,
-      builder: (_, __) => const DriverProfileScreen(),
-    ),
-    GoRoute(
-      path: AppRoutes.notifications,
-      builder: (_, __) => const NotificationsScreen(),
-    ),
-    GoRoute(
-      path: AppRoutes.history,
-      builder: (_, __) => const InspectionHistoryScreen(),
-    ),
-    GoRoute(
       path: AppRoutes.historyDetail,
       builder: (context, state) {
         final id = int.tryParse(state.pathParameters['id'] ?? '0') ?? 0;
-        return InspectionHistoryDetailScreen(inspectionId: id);
+        return BlocProvider(
+          create: (ctx) => InspectionHistoryDetailBloc(
+              ctx.read<InspectionRepository>())
+            ..add(DetailRequested(id)),
+          child: InspectionHistoryDetailScreen(inspectionId: id),
+        );
       },
-    ),
-    GoRoute(
-      path: AppRoutes.help,
-      builder: (_, __) => const HelpSupportScreen(),
     ),
   ],
   redirect: (context, state) {
@@ -180,7 +234,10 @@ final GoRouter appRouter = GoRouter(
         state.matchedLocation == AppRoutes.splash ||
         state.matchedLocation == AppRoutes.forgotPassword ||
         state.matchedLocation == AppRoutes.verifyOtp ||
-        state.matchedLocation == AppRoutes.createPassword;
+        state.matchedLocation == AppRoutes.createPassword ||
+        // Reachable from the (unauthenticated) login screen's "Need Help"
+        // link, so it must stay exempt from the login redirect too.
+        state.matchedLocation == AppRoutes.help;
 
     if (!loggedIn && !onAuth) return AppRoutes.login;
     return null;

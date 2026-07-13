@@ -1,17 +1,21 @@
 class QrData {
-  final String qrCodeString;
-  final String vehicleNumber;
+  final String  qrCodeString;
+  final int?    vehicleId;          // DB id of the vehicle — needed for submission
+  final String  vehicleNumber;
   final String? trailerNumber;
   final String? vin;
   final String? plateNumber;
   final String? fleetNumber;
-  final String companyName;
-  final String driverName;
-  final String employeeId;
-  final String? inspectionType; // 'pre_trip' | 'post_trip' | null (driver selects)
+  final String  companyName;
+  final String  driverName;
+  final String  employeeId;
+  final String? inspectionType;       // 'pre_trip' | 'post_trip' | null (driver selects)
+  final int?    pendingInspectionId;  // DB id of the pending inspection job (if assigned)
+  final String? pendingInspectionRef; // Human-readable inspection_id (e.g. INS-260701...)
 
   const QrData({
     required this.qrCodeString,
+    this.vehicleId,
     required this.vehicleNumber,
     this.trailerNumber,
     this.vin,
@@ -21,19 +25,29 @@ class QrData {
     required this.driverName,
     required this.employeeId,
     this.inspectionType,
+    this.pendingInspectionId,
+    this.pendingInspectionRef,
   });
 
+  /// Whether the admin has pre-assigned a specific inspection job for this scan.
+  bool get hasAssignedJob => pendingInspectionId != null && inspectionType != null;
+
   factory QrData.fromJson(Map<String, dynamic> j) => QrData(
-    qrCodeString:  j['qr_code_string'] ?? '',
-    vehicleNumber: j['vehicle_number'] ?? '',
-    trailerNumber: j['trailer_number'],
-    vin:           j['vin'],
-    plateNumber:   j['plate_number'],
-    fleetNumber:   j['fleet_number'],
-    companyName:   j['company_name'] ?? '',
-    driverName:    j['driver_name'] ?? '',
-    employeeId:    j['employee_id'] ?? '',
-    inspectionType:j['inspection_type'],
+    qrCodeString:        j['qr_code_string']?.toString() ?? '',
+    vehicleId:           j['vehicle_id'] != null ? int.tryParse(j['vehicle_id'].toString()) : null,
+    vehicleNumber:       j['vehicle_number']?.toString() ?? '',
+    trailerNumber:       j['trailer_number']?.toString(),
+    vin:                 j['vin']?.toString(),
+    plateNumber:         j['plate_number']?.toString(),
+    fleetNumber:         j['fleet_number']?.toString(),
+    companyName:         j['company_name']?.toString() ?? '',
+    driverName:          j['driver_name']?.toString() ?? '',
+    employeeId:          j['employee_id']?.toString() ?? '',
+    inspectionType:      j['inspection_type']?.toString(),
+    pendingInspectionId: j['pending_inspection_id'] != null
+        ? int.tryParse(j['pending_inspection_id'].toString())
+        : null,
+    pendingInspectionRef: j['pending_inspection_ref']?.toString(),
   );
 }
 
@@ -104,10 +118,19 @@ class GpsLocation {
     'address': address,
     'captured_at': capturedAt.toIso8601String(),
   };
+
+  factory GpsLocation.fromJson(Map<String, dynamic> j) => GpsLocation(
+    latitude:   double.tryParse(j['latitude'].toString()) ?? 0,
+    longitude:  double.tryParse(j['longitude'].toString()) ?? 0,
+    address:    j['address']?.toString() ?? '',
+    capturedAt: DateTime.tryParse(j['captured_at']?.toString() ?? '') ?? DateTime.now(),
+  );
 }
 
 class InspectionSubmission {
   final String qrCodeString;
+  final String vehicleNumber;
+  final String? trailerNumber;
   final String inspectionType; // 'pre_trip' | 'post_trip'
   final List<ChecklistResponse> responses;
   final List<DefectReport> defects;
@@ -117,6 +140,8 @@ class InspectionSubmission {
 
   const InspectionSubmission({
     required this.qrCodeString,
+    this.vehicleNumber = '',
+    this.trailerNumber,
     required this.inspectionType,
     required this.responses,
     this.defects = const [],
@@ -127,6 +152,8 @@ class InspectionSubmission {
 
   Map<String, dynamic> toJson() => {
     'qr_code_string': qrCodeString,
+    'vehicle_number': vehicleNumber,
+    'trailer_number': trailerNumber,
     'inspection_type': inspectionType,
     'responses': responses.map((r) => r.toJson()).toList(),
     'defects': defects.map((d) => d.toJson()).toList(),
@@ -142,11 +169,12 @@ class InspectionSubmission {
 }
 
 class InspectionResult {
-  final int id;
-  final String inspectionId; // display ID e.g. FC-2024-0001
+  final int    id;
+  final String inspectionId;
   final String vehicleNumber;
   final String inspectionType;
-  final DateTime submittedAt;
+  final DateTime assignDate;    // created_at — when admin assigned the job
+  final DateTime? submittedAt;  // null until driver submits
   final GpsLocation? gpsLocation;
   final String status;
 
@@ -155,18 +183,31 @@ class InspectionResult {
     required this.inspectionId,
     required this.vehicleNumber,
     required this.inspectionType,
-    required this.submittedAt,
+    required this.assignDate,
+    this.submittedAt,
     this.gpsLocation,
     required this.status,
   });
 
+  // Display date: submitted_at when completed, created_at for pending
+  DateTime get displayDate => submittedAt ?? assignDate;
+
   factory InspectionResult.fromJson(Map<String, dynamic> j) => InspectionResult(
-    id:             j['id'] as int,
-    inspectionId:   j['inspection_id'] ?? 'FC-${j['id']}',
-    vehicleNumber:  j['vehicle_number'] ?? '',
-    inspectionType: j['inspection_type'] ?? '',
-    submittedAt:    DateTime.tryParse(j['submitted_at'] ?? '') ?? DateTime.now(),
-    status:         j['status'] ?? 'completed',
+    id:             j['id'] != null ? int.tryParse(j['id'].toString()) ?? 0 : 0,
+    inspectionId:   j['inspection_id']?.toString() ?? '',
+    vehicleNumber:  j['vehicle_number']?.toString() ?? '',
+    inspectionType: j['inspection_type']?.toString() ?? '',
+    // Use created_at as the assign date; fall back to 'date' field the API sends
+    assignDate:     DateTime.tryParse(
+                      j['created_at']?.toString() ??
+                      j['date']?.toString() ?? '') ?? DateTime.now(),
+    submittedAt:    j['submitted_at'] != null
+                      ? DateTime.tryParse(j['submitted_at'].toString())
+                      : null,
+    gpsLocation:    j['gps_location'] != null
+                      ? GpsLocation.fromJson(j['gps_location'] as Map<String, dynamic>)
+                      : null,
+    status:         j['status']?.toString() ?? 'pending',
   );
 }
 
@@ -190,12 +231,12 @@ class NotificationModel {
   });
 
   factory NotificationModel.fromJson(Map<String, dynamic> j) => NotificationModel(
-    id:          j['id'] as int,
-    title:       j['title'] ?? '',
-    message:     j['message'] ?? '',
-    type:        j['type'] ?? 'management',
+    id:          j['id'] != null ? int.tryParse(j['id'].toString()) ?? 0 : 0,
+    title:       j['title']?.toString() ?? '',
+    message:     j['message']?.toString() ?? '',
+    type:        j['type']?.toString() ?? 'management',
     isRead:      j['is_read'] == 1 || j['is_read'] == true,
-    createdAt:   DateTime.tryParse(j['created_at'] ?? '') ?? DateTime.now(),
+    createdAt:   DateTime.tryParse(j['created_at']?.toString() ?? '') ?? DateTime.now(),
     referenceId: j['reference_id']?.toString(),
   );
 }
@@ -216,10 +257,10 @@ class ActivityItem {
   });
 
   factory ActivityItem.fromJson(Map<String, dynamic> j) => ActivityItem(
-    inspectionId:  j['inspection_id'] ?? '',
-    vehicleNumber: j['vehicle_number'] ?? '',
-    type:          j['inspection_type'] ?? '',
-    status:        j['status'] ?? '',
-    date:          DateTime.tryParse(j['date'] ?? '') ?? DateTime.now(),
+    inspectionId:  j['inspection_id']?.toString() ?? '',
+    vehicleNumber: j['vehicle_number']?.toString() ?? '',
+    type:          j['inspection_type']?.toString() ?? '',
+    status:        j['status']?.toString() ?? '',
+    date:          DateTime.tryParse(j['date']?.toString() ?? '') ?? DateTime.now(),
   );
 }

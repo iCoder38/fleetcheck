@@ -1,10 +1,23 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
+import '../../blocs/profile/driver_profile_bloc.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
+import '../../core/theme/app_responsive.dart';
 import '../../models/driver_model.dart';
-import '../../repositories/auth_repository.dart';
-import '../../repositories/inspection_repository.dart';
+import '../../routes/app_router.dart';
+
+const _ctaGradient = LinearGradient(
+  colors: [AppColors.green, Color(0xFF43A047)],
+  begin: Alignment.topLeft,
+  end: Alignment.bottomRight,
+);
+const _avatarGradient = LinearGradient(
+  colors: [Color(0xFF2E9E5B), Color(0xFF2E7CD6)],
+  begin: Alignment.topLeft,
+  end: Alignment.bottomRight,
+);
 
 class DriverProfileScreen extends StatefulWidget {
   const DriverProfileScreen({super.key});
@@ -14,29 +27,11 @@ class DriverProfileScreen extends StatefulWidget {
 }
 
 class _DriverProfileScreenState extends State<DriverProfileScreen> {
-  final _authRepo  = AuthRepository();
-  final _inspRepo  = InspectionRepository();
-
-  DriverModel? _driver;
-  bool _isLoading  = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadDriver();
-  }
-
-  Future<void> _loadDriver() async {
-    // Try cached first for instant display
-    final cached = _authRepo.getCachedDriver();
-    if (cached != null) setState(() { _driver = cached; _isLoading = false; });
-  }
-
   // ─── Edit Profile ─────────────────────────────────────
-  void _showEditProfile() {
-    final phoneCtrl = TextEditingController(text: _driver?.phone ?? '');
-    final emailCtrl = TextEditingController(text: _driver?.email ?? '');
-    bool saving = false;
+  void _showEditProfile(DriverModel? driver) {
+    final phoneCtrl = TextEditingController(text: driver?.phone ?? '');
+    final emailCtrl = TextEditingController(text: driver?.email ?? '');
+    final bloc = context.read<DriverProfileBloc>();
 
     showModalBottomSheet(
       context: context,
@@ -44,54 +39,67 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (ctx) => StatefulBuilder(builder: (ctx, setBS) {
-        return Padding(
-          padding: EdgeInsets.fromLTRB(24, 20, 24,
-              MediaQuery.of(ctx).viewInsets.bottom + 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Handle
-              Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2)))),
-              const SizedBox(height: 16),
-              const Text('Edit Profile', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.primary)),
-              const SizedBox(height: 4),
-              const Text('You can update your phone number and email address.', style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
-              const SizedBox(height: 20),
-              _FormField(label: 'Phone Number', controller: phoneCtrl, keyboardType: TextInputType.phone, prefixIcon: Icons.phone_outlined),
-              const SizedBox(height: 14),
-              _FormField(label: 'Email Address', controller: emailCtrl, keyboardType: TextInputType.emailAddress, prefixIcon: Icons.email_outlined),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
-                  onPressed: saving ? null : () async {
-                    setBS(() => saving = true);
-                    final result = await _inspRepo.updateProfile(
-                      phone: phoneCtrl.text.trim(),
-                      email: emailCtrl.text.trim(),
-                    );
-                    if (!mounted) return;
-                    if (result.success && result.data != null) {
-                      setState(() => _driver = result.data);
-                    }
-                    Navigator.of(ctx).pop();
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      content: Text(result.success ? 'Profile updated successfully.' : (result.error ?? 'Update failed.')),
-                      backgroundColor: result.success ? AppColors.secondary : AppColors.danger,
-                    ));
-                  },
-                  child: saving
-                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
-                      : const Text('Save Changes', style: TextStyle(fontWeight: FontWeight.w600)),
-                ),
+      builder: (ctx) => BlocProvider.value(
+        value: bloc,
+        child: BlocConsumer<DriverProfileBloc, DriverProfileState>(
+          listener: (ctx, state) {
+            if (state.profileUpdateSucceeded) {
+              Navigator.of(ctx).pop();
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                content: Text(AppStrings.profileUpdatedSuccess),
+                backgroundColor: AppColors.secondary,
+              ));
+            }
+          },
+          builder: (ctx, state) {
+            final saving = state.isUpdatingProfile;
+            return Padding(
+              padding: EdgeInsets.fromLTRB(24, 20, 24,
+                  MediaQuery.of(ctx).viewInsets.bottom + 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Handle
+                  Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2)))),
+                  const SizedBox(height: 16),
+                  const Text(AppStrings.editProfile, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.primary)),
+                  const SizedBox(height: 4),
+                  const Text(AppStrings.editProfileSubtitle, style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+                  const SizedBox(height: 20),
+                  if (state.updateError != null) ...[
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(color: AppColors.danger.withOpacity(0.08), borderRadius: BorderRadius.circular(8)),
+                      child: Text(state.updateError!, style: const TextStyle(color: AppColors.danger, fontSize: 13)),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  _FormField(label: AppStrings.labelPhoneNumber, controller: phoneCtrl, keyboardType: TextInputType.phone, prefixIcon: Icons.phone_outlined),
+                  const SizedBox(height: 14),
+                  _FormField(label: AppStrings.labelEmailAddress, controller: emailCtrl, keyboardType: TextInputType.emailAddress, prefixIcon: Icons.email_outlined),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton(
+                      onPressed: saving ? null : () {
+                        bloc.add(ProfileUpdateRequested(
+                          phone: phoneCtrl.text.trim(),
+                          email: emailCtrl.text.trim(),
+                        ));
+                      },
+                      child: saving
+                          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
+                          : const Text(AppStrings.saveChanges, style: TextStyle(fontWeight: FontWeight.w600)),
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
-        );
-      }),
+            );
+          },
+        ),
+      ),
     );
   }
 
@@ -101,11 +109,10 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
     final newCtrl     = TextEditingController();
     final confirmCtrl = TextEditingController();
     final formKey     = GlobalKey<FormState>();
-    bool saving       = false;
     bool obscureCurr  = true;
     bool obscureNew   = true;
     bool obscureConf  = true;
-    String? error;
+    final bloc = context.read<DriverProfileBloc>();
 
     showModalBottomSheet(
       context: context,
@@ -113,190 +120,281 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (ctx) => StatefulBuilder(builder: (ctx, setBS) {
-        return Padding(
-          padding: EdgeInsets.fromLTRB(24, 20, 24,
-              MediaQuery.of(ctx).viewInsets.bottom + 24),
-          child: Form(
-            key: formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2)))),
-                const SizedBox(height: 16),
-                const Text(AppStrings.changePassword, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.primary)),
-                const SizedBox(height: 20),
-                if (error != null) ...[
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(color: AppColors.danger.withOpacity(0.08), borderRadius: BorderRadius.circular(8)),
-                    child: Text(error!, style: const TextStyle(color: AppColors.danger, fontSize: 13)),
-                  ),
-                  const SizedBox(height: 12),
-                ],
-                _PasswordField(label: AppStrings.currentPassword, controller: currentCtrl, obscure: obscureCurr, onToggle: () => setBS(() => obscureCurr = !obscureCurr),
-                    validator: (v) => (v?.isEmpty ?? true) ? AppStrings.fieldRequired : null),
-                const SizedBox(height: 12),
-                _PasswordField(label: 'New Password', controller: newCtrl, obscure: obscureNew, onToggle: () => setBS(() => obscureNew = !obscureNew),
-                    validator: (v) => (v?.length ?? 0) < 6 ? 'Min 6 characters' : null),
-                const SizedBox(height: 12),
-                _PasswordField(label: 'Confirm New Password', controller: confirmCtrl, obscure: obscureConf, onToggle: () => setBS(() => obscureConf = !obscureConf),
-                    validator: (v) => v != newCtrl.text ? AppStrings.passwordMismatch : null),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton(
-                    onPressed: saving ? null : () async {
-                      if (!formKey.currentState!.validate()) return;
-                      setBS(() { saving = true; error = null; });
-                      final result = await _authRepo.changePassword(
-                        currentPassword: currentCtrl.text,
-                        newPassword:     newCtrl.text,
-                        confirmPassword: confirmCtrl.text,
-                      );
-                      if (!mounted) return;
-                      if (result.success) {
-                        Navigator.of(ctx).pop();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Password changed successfully.'), backgroundColor: AppColors.secondary),
-                        );
-                      } else {
-                        setBS(() { saving = false; error = result.error ?? 'Failed to change password.'; });
-                      }
-                    },
-                    child: saving
-                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
-                        : const Text('Change Password', style: TextStyle(fontWeight: FontWeight.w600)),
-                  ),
+      builder: (ctx) => BlocProvider.value(
+        value: bloc,
+        child: BlocConsumer<DriverProfileBloc, DriverProfileState>(
+          listener: (ctx, state) {
+            if (state.passwordChangeSucceeded) {
+              Navigator.of(ctx).pop();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text(AppStrings.passwordChangedSuccess), backgroundColor: AppColors.secondary),
+              );
+            }
+          },
+          builder: (ctx, state) => StatefulBuilder(builder: (ctx, setBS) {
+            final saving = state.isChangingPassword;
+            return Padding(
+              padding: EdgeInsets.fromLTRB(24, 20, 24,
+                  MediaQuery.of(ctx).viewInsets.bottom + 24),
+              child: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2)))),
+                    const SizedBox(height: 16),
+                    const Text(AppStrings.changePassword, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.primary)),
+                    const SizedBox(height: 20),
+                    if (state.passwordError != null) ...[
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(color: AppColors.danger.withOpacity(0.08), borderRadius: BorderRadius.circular(8)),
+                        child: Text(state.passwordError!, style: const TextStyle(color: AppColors.danger, fontSize: 13)),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    _PasswordField(label: AppStrings.currentPassword, controller: currentCtrl, obscure: obscureCurr, onToggle: () => setBS(() => obscureCurr = !obscureCurr),
+                        validator: (v) => (v?.isEmpty ?? true) ? AppStrings.fieldRequired : null),
+                    const SizedBox(height: 12),
+                    _PasswordField(label: AppStrings.labelNewPassword, controller: newCtrl, obscure: obscureNew, onToggle: () => setBS(() => obscureNew = !obscureNew),
+                        validator: (v) => (v?.length ?? 0) < 6 ? AppStrings.minSixChars : null),
+                    const SizedBox(height: 12),
+                    _PasswordField(label: AppStrings.labelConfirmNewPassword, controller: confirmCtrl, obscure: obscureConf, onToggle: () => setBS(() => obscureConf = !obscureConf),
+                        validator: (v) => v != newCtrl.text ? AppStrings.passwordMismatch : null),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        onPressed: saving ? null : () {
+                          if (!formKey.currentState!.validate()) return;
+                          bloc.add(PasswordChangeRequested(
+                            currentPassword: currentCtrl.text,
+                            newPassword:     newCtrl.text,
+                            confirmPassword: confirmCtrl.text,
+                          ));
+                        },
+                        child: saving
+                            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
+                            : const Text(AppStrings.changePassword, style: TextStyle(fontWeight: FontWeight.w600)),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ),
-        );
-      }),
+              ),
+            );
+          }),
+        ),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final driver = _driver;
-
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(title: const Text(AppStrings.driverProfile)),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : driver == null
-              ? const Center(child: Text('Failed to load profile.'))
+    return BlocBuilder<DriverProfileBloc, DriverProfileState>(
+      builder: (context, state) {
+        final driver = state.driver;
+        return Scaffold(
+          backgroundColor: AppColors.appbg,
+          body: driver == null
+              ? const Center(child: CircularProgressIndicator(color: AppColors.secondary))
               : SingleChildScrollView(
                   child: Column(
                     children: [
                       // ─── Profile Header ─────────────────────────────
                       Container(
                         width: double.infinity,
-                        padding: const EdgeInsets.all(28),
                         decoration: const BoxDecoration(gradient: AppColors.primaryGradient),
+                        child: SafeArea(
+                          bottom: false,
+                          child: Padding(
+                            padding: EdgeInsets.fromLTRB(
+                                AppResponsive.padding(context, 24),
+                                AppResponsive.padding(context, 16),
+                                AppResponsive.padding(context, 24),
+                                AppResponsive.padding(context, 24)),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                // Avatar
+                                Stack(
+                                  clipBehavior: Clip.none,
+                                  children: [
+                                    Container(
+                                      width: AppResponsive.scale(context, 84),
+                                      height: AppResponsive.scale(context, 84),
+                                      decoration: const BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        gradient: _avatarGradient,
+                                      ),
+                                      child: driver.photoUrl != null
+                                          ? ClipOval(child: Image.network(driver.photoUrl!, fit: BoxFit.cover))
+                                          : const Icon(Icons.person_rounded, size: 44, color: Colors.white),
+                                    ),
+                                    Positioned(
+                                      top: -4, right: -4,
+                                      child: GestureDetector(
+                                        onTap: () => _showEditProfile(driver),
+                                        child: Container(
+                                          width: AppResponsive.scale(context, 26),
+                                          height: AppResponsive.scale(context, 26),
+                                          decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(blurRadius: 6, color: Colors.black26)]),
+                                          child: const Icon(Icons.camera_alt_rounded, size: 14, color: AppColors.primary),
+                                        ),
+                                      ),
+                                    ),
+                                    if (driver.status == 'active')
+                                      Positioned(
+                                        bottom: -6, left: -40, right: -40,
+                                        child: Center(
+                                          child: Container(
+                                            padding: EdgeInsets.symmetric(
+                                                horizontal: AppResponsive.padding(context, 10),
+                                                vertical: AppResponsive.padding(context, 3)),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFF3FCB6E),
+                                              borderRadius: BorderRadius.circular(99),
+                                              border: Border.all(color: AppColors.primary, width: 2),
+                                            ),
+                                            child: Row(mainAxisSize: MainAxisSize.min, children: [
+                                              const Icon(Icons.check_rounded, size: 12, color: AppColors.primary),
+                                              const SizedBox(width: 2),
+                                              Text(AppStrings.activeVerified,
+                                                  softWrap: false,
+                                                  style: TextStyle(
+                                                      fontSize: AppResponsive.text(context, 11),
+                                                      fontWeight: FontWeight.w800,
+                                                      color: AppColors.primary)),
+                                            ]),
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                SizedBox(width: AppResponsive.spacing(context, 18)),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(driver.fullName,
+                                          style: TextStyle(
+                                              fontSize: AppResponsive.text(context, 22),
+                                              fontWeight: FontWeight.w800,
+                                              color: Colors.white)),
+                                      SizedBox(height: AppResponsive.spacing(context, 4)),
+                                      Text(AppStrings.empIdLabel(driver.employeeId),
+                                          style: TextStyle(
+                                              fontSize: AppResponsive.text(context, 14),
+                                              color: Colors.white.withValues(alpha: 0.65))),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      // ─── Info Card ───────────────────────────────────
+                      Padding(
+                        padding: EdgeInsets.all(AppResponsive.padding(context, 20)),
                         child: Column(
                           children: [
-                            // Avatar
-                            Stack(
+                            _InfoCard(rows: [
+                              _RowData(AppStrings.labelEmployeeId,   driver.employeeId),
+                              _RowData(AppStrings.labelPhoneNumber,  driver.phone),
+                              _RowData(AppStrings.labelEmailAddress, driver.email),
+                              _RowData(AppStrings.labelBadgeId,      driver.badgeId),
+                              _RowData(AppStrings.labelLicenseNumber, driver.licenseNumber),
+                              _RowData(AppStrings.labelLicenseExpiry, driver.licenseExpiry),
+                            ]),
+                            SizedBox(height: AppResponsive.spacing(context, 20)),
+
+                            // Edit Profile / Change Password
+                            Row(
                               children: [
-                                Container(
-                                  width: 88,
-                                  height: 88,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    gradient: AppColors.greenGradient,
-                                    border: Border.all(color: Colors.white, width: 3),
+                                Expanded(
+                                  child: SizedBox(
+                                    height: AppResponsive.scale(context, 54),
+                                    child: ElevatedButton(
+                                      onPressed: () => _showEditProfile(driver),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.transparent,
+                                        shadowColor: Colors.transparent,
+                                        padding: EdgeInsets.zero,
+                                      ),
+                                      child: Ink(
+                                        decoration: BoxDecoration(
+                                          gradient: _ctaGradient,
+                                          borderRadius: BorderRadius.circular(15),
+                                          boxShadow: [
+                                            BoxShadow(
+                                                color: AppColors.green.withValues(alpha: 0.35),
+                                                blurRadius: 16,
+                                                offset: const Offset(0, 6)),
+                                          ],
+                                        ),
+                                        child: Container(
+                                          alignment: Alignment.center,
+                                          child: Text(AppStrings.editProfile,
+                                              style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: AppResponsive.text(context, 15),
+                                                  fontWeight: FontWeight.w800)),
+                                        ),
+                                      ),
+                                    ),
                                   ),
-                                  child: driver.photoUrl != null
-                                      ? ClipOval(child: Image.network(driver.photoUrl!, fit: BoxFit.cover))
-                                      : const Icon(Icons.person_rounded, size: 48, color: Colors.white),
                                 ),
-                                Positioned(
-                                  bottom: 0, right: 0,
-                                  child: GestureDetector(
-                                    onTap: _showEditProfile,
-                                    child: Container(
-                                      width: 28, height: 28,
-                                      decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(blurRadius: 6, color: Colors.black26)]),
-                                      child: const Icon(Icons.camera_alt_rounded, size: 15, color: AppColors.primary),
+                                SizedBox(width: AppResponsive.spacing(context, 12)),
+                                Expanded(
+                                  child: SizedBox(
+                                    height: AppResponsive.scale(context, 54),
+                                    child: OutlinedButton(
+                                      onPressed: _showChangePassword,
+                                      style: OutlinedButton.styleFrom(
+                                        backgroundColor: Colors.white,
+                                        foregroundColor: AppColors.green,
+                                        side: const BorderSide(color: AppColors.green, width: 1.5),
+                                        padding: EdgeInsets.symmetric(
+                                            horizontal: AppResponsive.padding(context, 4)),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                                      ),
+                                      child: FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        child: Text(AppStrings.changePassword,
+                                            textAlign: TextAlign.center,
+                                            maxLines: 1,
+                                            style: TextStyle(
+                                                fontWeight: FontWeight.w800,
+                                                fontSize: AppResponsive.text(context, 15),
+                                                color: AppColors.green)),
+                                      ),
                                     ),
                                   ),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 14),
-                            Text(driver.fullName, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white)),
-                            const SizedBox(height: 4),
-                            // Verified badge
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.15),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                const Icon(Icons.verified_rounded, size: 14, color: Color(0xFF4CAF50)),
-                                const SizedBox(width: 4),
-                                Text(
-                                  driver.status == 'active' ? 'Active · Verified' : 'Inactive',
-                                  style: const TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w600),
-                                ),
-                              ]),
-                            ),
-                          ],
-                        ),
-                      ),
+                            SizedBox(height: AppResponsive.spacing(context, 10)),
 
-                      // ─── Info Cards ──────────────────────────────────
-                      Padding(
-                        padding: const EdgeInsets.all(20),
-                        child: Column(
-                          children: [
-                            _InfoSection(
-                              title: 'Personal Information',
-                              icon: Icons.person_outline_rounded,
-                              rows: [
-                                _RowData('Employee ID',     driver.employeeId),
-                                _RowData('Badge ID',        driver.badgeId),
-                                _RowData('Phone Number',    driver.phone),
-                                _RowData('Email Address',   driver.email),
-                              ],
-                            ),
-                            const SizedBox(height: 14),
-                            _InfoSection(
-                              title: 'License Information',
-                              icon: Icons.card_membership_rounded,
-                              rows: [
-                                _RowData('License Number',  driver.licenseNumber),
-                                _RowData('License Expiry',  driver.licenseExpiry),
-                              ],
-                            ),
-                            const SizedBox(height: 20),
-
-                            // Edit Profile button
+                            // Help & Support button
                             SizedBox(
                               width: double.infinity,
-                              height: 52,
-                              child: ElevatedButton.icon(
-                                onPressed: _showEditProfile,
-                                icon:  const Icon(Icons.edit_rounded, size: 18),
-                                label: const Text(AppStrings.editProfile, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-
-                            // Change Password button
-                            SizedBox(
-                              width: double.infinity,
-                              height: 52,
+                              height: AppResponsive.scale(context, 54),
                               child: OutlinedButton.icon(
-                                onPressed: _showChangePassword,
-                                icon:  const Icon(Icons.lock_outline_rounded, size: 18),
-                                label: const Text(AppStrings.changePassword, style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+                                onPressed: () => context.push(AppRoutes.help),
+                                style: OutlinedButton.styleFrom(
+                                  backgroundColor: Colors.white,
+                                  foregroundColor: AppColors.primary,
+                                  side: const BorderSide(color: AppColors.border),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                                ),
+                                icon: const Icon(Icons.help_outline_rounded, size: 18),
+                                label: Text(AppStrings.helpSupport,
+                                    style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: AppResponsive.text(context, 15))),
                               ),
                             ),
                           ],
@@ -305,50 +403,55 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
                     ],
                   ),
                 ),
+        );
+      },
     );
   }
 }
 
 // ─── Reusable widgets ─────────────────────────────────────
 
-class _InfoSection extends StatelessWidget {
-  final String title;
-  final IconData icon;
+class _InfoCard extends StatelessWidget {
   final List<_RowData> rows;
 
-  const _InfoSection({required this.title, required this.icon, required this.rows});
+  const _InfoCard({required this.rows});
 
   @override
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 12, offset: const Offset(0, 4)),
+        ],
       ),
       child: Column(
         children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.04),
-              borderRadius: const BorderRadius.only(topLeft: Radius.circular(12), topRight: Radius.circular(12)),
+          for (int i = 0; i < rows.length; i++)
+            Container(
+              padding: EdgeInsets.symmetric(
+                  horizontal: AppResponsive.padding(context, 18),
+                  vertical: AppResponsive.padding(context, 14)),
+              decoration: BoxDecoration(
+                border: i == rows.length - 1
+                    ? null
+                    : const Border(bottom: BorderSide(color: AppColors.divider)),
+              ),
+              child: Row(children: [
+                Expanded(
+                    child: Text(rows[i].label,
+                        style: TextStyle(
+                            fontSize: AppResponsive.text(context, 13),
+                            color: AppColors.textSecondary))),
+                Text(rows[i].value.isEmpty ? '—' : rows[i].value,
+                    textAlign: TextAlign.right,
+                    style: TextStyle(
+                        fontSize: AppResponsive.text(context, 14),
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.primary)),
+              ]),
             ),
-            child: Row(children: [
-              Icon(icon, color: AppColors.primary, size: 17),
-              const SizedBox(width: 8),
-              Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.primary)),
-            ]),
-          ),
-          ...rows.map((r) => Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: rows.last == r ? null : const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.divider))),
-            child: Row(children: [
-              Expanded(flex: 2, child: Text(r.label, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary))),
-              Expanded(flex: 3, child: Text(r.value.isEmpty ? '—' : r.value, textAlign: TextAlign.right,
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary))),
-            ]),
-          )),
         ],
       ),
     );

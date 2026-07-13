@@ -17,6 +17,10 @@ class AppConstants {
   static const String keyIsLoggedIn  = 'is_logged_in';
   static const String keyIsFirstLaunch = 'is_first_launch';
   static const String keyFcmToken    = 'fcm_token';
+  // Saved so an expired token can be silently renewed via /auth/login
+  // without interrupting the driver mid-task (see SessionManager).
+  static const String keyAuthIdentifier = 'auth_identifier';
+  static const String keyAuthPassword   = 'auth_password';
 
   // OTP
   static const int otpLength         = 6;

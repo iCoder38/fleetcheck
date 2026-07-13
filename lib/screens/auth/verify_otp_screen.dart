@@ -1,11 +1,15 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import '../../blocs/auth/verify_otp/verify_otp_bloc.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/constants/app_constants.dart';
-import '../../repositories/auth_repository.dart';
+import '../../core/theme/app_responsive.dart';
+import '../../core/theme/app_text_styles.dart';
+import '../../core/widgets/error_banner.dart';
 import '../../routes/app_router.dart';
 
 class VerifyOtpScreen extends StatefulWidget {
@@ -22,13 +26,14 @@ class _VerifyOtpScreenState extends State<VerifyOtpScreen> {
       List.generate(6, (_) => TextEditingController());
   final List<FocusNode> _focusNodes = List.generate(6, (_) => FocusNode());
 
-  final _repo = AuthRepository();
-
-  bool _isVerifying = false;
-  bool _isResending = false;
-  String? _error;
   int _countdown = AppConstants.otpExpirySeconds;
   Timer? _timer;
+
+  static const _ctaGradient = LinearGradient(
+    colors: [AppColors.green, Color(0xFF43A047)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
 
   @override
   void initState() {
@@ -38,6 +43,9 @@ class _VerifyOtpScreenState extends State<VerifyOtpScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusNodes[0].requestFocus();
     });
+    for (final f in _focusNodes) {
+      f.addListener(() => setState(() {}));
+    }
   }
 
   void _startCountdown() {
@@ -75,205 +83,334 @@ class _VerifyOtpScreenState extends State<VerifyOtpScreen> {
     setState(() {});
   }
 
-  Future<void> _verifyOtp() async {
-    if (!_isOtpComplete) {
-      setState(() => _error = 'Please enter all 6 digits.');
-      return;
-    }
-    if (_isExpired) {
-      setState(() => _error = AppStrings.otpExpired);
-      return;
-    }
-
-    setState(() { _isVerifying = true; _error = null; });
-
-    final result = await _repo.verifyOtp(
-      identifier: widget.identifier,
-      otp: _otpValue,
-    );
-
-    if (!mounted) return;
-    setState(() => _isVerifying = false);
-
-    if (result.success) {
-      context.push(AppRoutes.createPassword, extra: {
-        'identifier': widget.identifier,
-        'reset_token': result.data ?? '',
-      });
-    } else {
-      setState(() => _error = result.error ?? AppStrings.otpInvalid);
-      // Clear all boxes on wrong OTP
-      for (final c in _controllers) c.clear();
-      _focusNodes[0].requestFocus();
-    }
+  void _verifyOtp() {
+    if (!_isOtpComplete || _isExpired) return;
+    context.read<VerifyOtpBloc>().add(
+        OtpSubmitted(identifier: widget.identifier, otp: _otpValue));
   }
 
-  Future<void> _resendOtp() async {
-    if (_isResending) return;
-    setState(() { _isResending = true; _error = null; });
-
-    final result = await _repo.resendOtp(widget.identifier);
-
-    if (!mounted) return;
-    setState(() => _isResending = false);
-
-    if (result.success) {
-      for (final c in _controllers) c.clear();
-      _focusNodes[0].requestFocus();
-      _startCountdown();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('OTP resent successfully.'),
-          backgroundColor: AppColors.secondary,
-        ),
-      );
-    } else {
-      setState(() => _error = result.error ?? AppStrings.otpMaxAttempts);
-    }
+  void _resendOtp() {
+    context.read<VerifyOtpBloc>().add(OtpResendRequested(widget.identifier));
   }
 
   @override
   void dispose() {
     _timer?.cancel();
-    for (final c in _controllers) c.dispose();
-    for (final f in _focusNodes) f.dispose();
+    for (final c in _controllers) {
+      c.dispose();
+    }
+    for (final f in _focusNodes) {
+      f.dispose();
+    }
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: const Text('Verify OTP'),
-        leading: BackButton(onPressed: () => context.pop()),
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+    return BlocConsumer<VerifyOtpBloc, VerifyOtpState>(
+      listener: (context, state) {
+        if (state.verifiedResetToken != null) {
+          context.push(AppRoutes.createPassword, extra: {
+            'identifier': widget.identifier,
+            'reset_token': state.verifiedResetToken!,
+          });
+        }
+        if (state.verifyError != null) {
+          // Clear all boxes on wrong OTP
+          for (final c in _controllers) {
+            c.clear();
+          }
+          _focusNodes[0].requestFocus();
+        }
+        if (state.resendSucceeded) {
+          for (final c in _controllers) {
+            c.clear();
+          }
+          _focusNodes[0].requestFocus();
+          _startCountdown();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(AppStrings.otpResentSuccess),
+              backgroundColor: AppColors.secondary,
+            ),
+          );
+        }
+      },
+      builder: (context, state) {
+        final error = state.verifyError ?? state.resendError;
+        return Scaffold(
+          backgroundColor: AppColors.appbg,
+          body: Column(
             children: [
-              const SizedBox(height: 16),
+              _Header(identifier: widget.identifier, onBack: () => context.pop()),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.all(AppResponsive.padding(context, 24)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        AppStrings.otpEnterCaption,
+                        textAlign: TextAlign.center,
+                        style: AppTextStyles.body(context, color: AppColors.textSecondary),
+                      ),
+                      SizedBox(height: AppResponsive.spacing(context, 24)),
 
-              // Icon
-              Container(
-                width: 72, height: 72,
-                margin: const EdgeInsets.only(bottom: 24),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.08),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.sms_outlined, color: AppColors.primary, size: 34),
-              ),
+                      if (error != null) ...[
+                        ErrorBanner(error),
+                        SizedBox(height: AppResponsive.spacing(context, 20)),
+                      ],
 
-              const Text(
-                'Enter Verification Code',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: AppColors.primary),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'We sent a 6-digit code to\n${widget.identifier}',
-                style: const TextStyle(fontSize: 14, color: AppColors.textSecondary, height: 1.5),
-              ),
-              const SizedBox(height: 32),
+                      // OTP Boxes
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: List.generate(6, (i) => _OtpBox(
+                          controller: _controllers[i],
+                          focusNode: _focusNodes[i],
+                          onChanged: (v) => _onDigitChanged(i, v),
+                          hasError: error != null,
+                        )),
+                      ),
+                      SizedBox(height: AppResponsive.spacing(context, 24)),
 
-              // Error banner
-              if (_error != null) ...[
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: AppColors.danger.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: AppColors.danger.withOpacity(0.3)),
-                  ),
-                  child: Row(children: [
-                    const Icon(Icons.error_outline, color: AppColors.danger, size: 18),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text(_error!, style: const TextStyle(color: AppColors.danger, fontSize: 13))),
-                  ]),
-                ),
-                const SizedBox(height: 20),
-              ],
-
-              // OTP Boxes
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: List.generate(6, (i) => _OtpBox(
-                  controller: _controllers[i],
-                  focusNode: _focusNodes[i],
-                  onChanged: (v) => _onDigitChanged(i, v),
-                  hasError: _error != null,
-                )),
-              ),
-              const SizedBox(height: 24),
-
-              // Countdown
-              Center(
-                child: _isExpired
-                    ? const Text(
-                        'OTP has expired.',
-                        style: TextStyle(color: AppColors.danger, fontWeight: FontWeight.w600),
-                      )
-                    : RichText(
-                        text: TextSpan(
-                          style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
-                          children: [
-                            const TextSpan(text: 'Expires in '),
-                            TextSpan(
-                              text: '${_countdown}s',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w700,
-                                color: _countdown <= 10 ? AppColors.danger : AppColors.primary,
-                              ),
-                            ),
-                          ],
+                      // Countdown pill
+                      Center(
+                        child: Container(
+                          padding: EdgeInsets.symmetric(
+                              horizontal: AppResponsive.padding(context, 16),
+                              vertical: AppResponsive.padding(context, 8)),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(99),
+                            border: Border.all(color: AppColors.border),
+                          ),
+                          child: _isExpired
+                              ? Text(AppStrings.otpExpiredShort,
+                                  style: TextStyle(
+                                      color: AppColors.danger,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: AppResponsive.text(context, 13)))
+                              : Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.timer_outlined,
+                                        size: AppResponsive.scale(context, 16),
+                                        color: AppColors.textSecondary),
+                                    SizedBox(width: AppResponsive.spacing(context, 6)),
+                                    Text(AppStrings.otpExpiresInPrefix,
+                                        style: TextStyle(
+                                            fontSize: AppResponsive.text(context, 13),
+                                            color: AppColors.textSecondary)),
+                                    Text(
+                                      '00:${_countdown.toString().padLeft(2, '0')}',
+                                      style: TextStyle(
+                                        fontSize: AppResponsive.text(context, 13),
+                                        fontWeight: FontWeight.w800,
+                                        color: _countdown <= 10
+                                            ? AppColors.danger
+                                            : AppColors.danger,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                         ),
                       ),
-              ),
-              const SizedBox(height: 32),
+                      SizedBox(height: AppResponsive.spacing(context, 28)),
 
-              // Verify Button
-              SizedBox(
-                height: 52,
-                child: ElevatedButton(
-                  onPressed: (_isVerifying || _isExpired || !_isOtpComplete) ? null : _verifyOtp,
-                  child: _isVerifying
-                      ? const SizedBox(
-                          width: 22, height: 22,
-                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
-                        )
-                      : const Text(AppStrings.verifyOtp, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // Resend OTP
-              SizedBox(
-                height: 48,
-                child: TextButton(
-                  onPressed: (_isExpired || _countdown == 0) ? (_isResending ? null : _resendOtp) : null,
-                  child: _isResending
-                      ? const SizedBox(
-                          width: 20, height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Text(
-                          AppStrings.resendOtp,
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            color: _countdown == 0 ? AppColors.secondary : AppColors.textSecondary,
+                      // Verify OTP
+                      SizedBox(
+                        width: double.infinity,
+                        height: AppResponsive.scale(context, 54),
+                        child: ElevatedButton(
+                          onPressed: (state.isVerifying || _isExpired || !_isOtpComplete)
+                              ? null
+                              : _verifyOtp,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.transparent,
+                            shadowColor: Colors.transparent,
+                            padding: EdgeInsets.zero,
+                            disabledBackgroundColor: Colors.transparent,
+                          ),
+                          child: Ink(
+                            decoration: BoxDecoration(
+                              gradient: (_isExpired || !_isOtpComplete)
+                                  ? null
+                                  : _ctaGradient,
+                              color: (_isExpired || !_isOtpComplete)
+                                  ? AppColors.border
+                                  : null,
+                              borderRadius: BorderRadius.circular(15),
+                              boxShadow: (_isExpired || !_isOtpComplete)
+                                  ? null
+                                  : [
+                                      BoxShadow(
+                                          color: AppColors.green.withValues(alpha: 0.35),
+                                          blurRadius: 16,
+                                          offset: const Offset(0, 6)),
+                                    ],
+                            ),
+                            child: Container(
+                              alignment: Alignment.center,
+                              child: state.isVerifying
+                                  ? SizedBox(
+                                      width: AppResponsive.scale(context, 22),
+                                      height: AppResponsive.scale(context, 22),
+                                      child: const CircularProgressIndicator(
+                                          color: Colors.white, strokeWidth: 2.5))
+                                  : Text(AppStrings.verifyOtp,
+                                      style: AppTextStyles.button(context,
+                                          color: Colors.white)),
+                            ),
                           ),
                         ),
+                      ),
+                      SizedBox(height: AppResponsive.spacing(context, 20)),
+
+                      // Resend OTP
+                      Center(
+                        child: state.isResending
+                            ? SizedBox(
+                                width: AppResponsive.scale(context, 20),
+                                height: AppResponsive.scale(context, 20),
+                                child: const CircularProgressIndicator(strokeWidth: 2))
+                            : GestureDetector(
+                                onTap: _countdown == 0 ? _resendOtp : null,
+                                child: RichText(
+                                  text: TextSpan(
+                                    style: TextStyle(
+                                        fontSize: AppResponsive.text(context, 13),
+                                        color: AppColors.textSecondary),
+                                    children: [
+                                      const TextSpan(text: AppStrings.otpDidntReceive),
+                                      TextSpan(
+                                        text: _countdown == 0
+                                            ? AppStrings.resendOtp
+                                            : '${AppStrings.resendOtp} (00:${_countdown.toString().padLeft(2, '0')})',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                          color: _countdown == 0
+                                              ? AppColors.green
+                                              : AppColors.textLight,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
           ),
-        ),
-      ),
+        );
+      },
     );
   }
+}
+
+// ─── Header: wave-bottomed navy panel with icon + copy + identifier pill ───
+class _Header extends StatelessWidget {
+  final String identifier;
+  final VoidCallback onBack;
+  const _Header({required this.identifier, required this.onBack});
+
+  @override
+  Widget build(BuildContext context) => ClipPath(
+        clipper: _WaveClipper(),
+        child: Container(
+          width: double.infinity,
+          decoration: const BoxDecoration(gradient: AppColors.primaryGradient),
+          padding: EdgeInsets.fromLTRB(
+            AppResponsive.padding(context, 24),
+            0,
+            AppResponsive.padding(context, 24),
+            AppResponsive.padding(context, 48),
+          ),
+          child: SafeArea(
+            bottom: false,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(height: AppResponsive.spacing(context, 12)),
+                GestureDetector(
+                  onTap: onBack,
+                  child: Container(
+                    width: AppResponsive.scale(context, 40),
+                    height: AppResponsive.scale(context, 40),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.arrow_back_rounded, color: Colors.white, size: 22),
+                  ),
+                ),
+                SizedBox(height: AppResponsive.spacing(context, 20)),
+                Center(
+                  child: Container(
+                    width: AppResponsive.scale(context, 72),
+                    height: AppResponsive.scale(context, 72),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: Icon(Icons.sms_outlined,
+                        color: AppColors.amber, size: AppResponsive.scale(context, 34)),
+                  ),
+                ),
+                SizedBox(height: AppResponsive.spacing(context, 20)),
+                Text(AppStrings.verifyOtp,
+                    textAlign: TextAlign.center,
+                    style: AppTextStyles.heading1(context, color: Colors.white)),
+                SizedBox(height: AppResponsive.spacing(context, 8)),
+                Text(
+                  AppStrings.otpSubtitle,
+                  textAlign: TextAlign.center,
+                  style: AppTextStyles.body(context,
+                      color: Colors.white.withValues(alpha: 0.65)),
+                ),
+                SizedBox(height: AppResponsive.spacing(context, 16)),
+                Center(
+                  child: Container(
+                    padding: EdgeInsets.symmetric(
+                        horizontal: AppResponsive.padding(context, 16),
+                        vertical: AppResponsive.padding(context, 8)),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                    child: Text(identifier,
+                        style: TextStyle(
+                            fontSize: AppResponsive.text(context, 15),
+                            fontWeight: FontWeight.w800,
+                            color: const Color(0xFF6FE39A))),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+}
+
+// ─── Gentle wave clip for the header's bottom edge ──────────────────────────
+class _WaveClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) {
+    final path = Path()..lineTo(0, size.height - 32);
+    path.quadraticBezierTo(
+        size.width * 0.25, size.height, size.width * 0.5, size.height - 16);
+    path.quadraticBezierTo(
+        size.width * 0.75, size.height - 32, size.width, size.height - 6);
+    path.lineTo(size.width, 0);
+    path.close();
+    return path;
+  }
+
+  @override
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
 }
 
 class _OtpBox extends StatelessWidget {
@@ -291,9 +428,15 @@ class _OtpBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final filled = controller.text.isNotEmpty;
+    final borderColor = hasError
+        ? AppColors.danger
+        : (filled || focusNode.hasFocus)
+            ? AppColors.green
+            : AppColors.border;
     return SizedBox(
-      width: 46,
-      height: 56,
+      width: AppResponsive.scale(context, 46),
+      height: AppResponsive.scale(context, 56),
       child: TextFormField(
         controller: controller,
         focusNode: focusNode,
@@ -301,34 +444,28 @@ class _OtpBox extends StatelessWidget {
         textAlign: TextAlign.center,
         keyboardType: TextInputType.number,
         inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-        style: const TextStyle(
-          fontSize: 24,
-          fontWeight: FontWeight.w700,
+        style: TextStyle(
+          fontSize: AppResponsive.text(context, 22),
+          fontWeight: FontWeight.w800,
           color: AppColors.primary,
         ),
         decoration: InputDecoration(
           counterText: '',
           contentPadding: EdgeInsets.zero,
           filled: true,
-          fillColor: hasError
-              ? AppColors.danger.withOpacity(0.06)
-              : (focusNode.hasFocus ? AppColors.primary.withOpacity(0.05) : AppColors.surface),
+          fillColor: hasError ? AppColors.redLight : Colors.white,
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide(
-              color: hasError ? AppColors.danger : AppColors.border,
-            ),
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: borderColor, width: filled ? 2 : 1),
           ),
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide(
-              color: hasError ? AppColors.danger : AppColors.border,
-            ),
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: borderColor, width: filled ? 2 : 1),
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(
-              color: hasError ? AppColors.danger : AppColors.primary,
+              color: hasError ? AppColors.danger : AppColors.green,
               width: 2,
             ),
           ),

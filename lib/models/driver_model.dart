@@ -24,16 +24,16 @@ class DriverModel {
   });
 
   factory DriverModel.fromJson(Map<String, dynamic> j) => DriverModel(
-    id:             j['id'] as int,
-    fullName:       j['full_name'] ?? '',
-    employeeId:     j['employee_id'] ?? '',
-    badgeId:        j['badge_id'] ?? '',
-    phone:          j['phone'] ?? '',
-    email:          j['email'] ?? '',
-    licenseNumber:  j['license_number'] ?? '',
-    licenseExpiry:  j['license_expiry'] ?? '',
-    photoUrl:       j['photo_url'],
-    status:         j['status'] ?? 'active',
+    id:             j['id'] != null ? int.tryParse(j['id'].toString()) ?? 0 : 0,
+    fullName:       j['full_name']?.toString() ?? '',
+    employeeId:     j['employee_id']?.toString() ?? '',
+    badgeId:        j['badge_id']?.toString() ?? '',
+    phone:          j['phone']?.toString() ?? '',
+    email:          j['email']?.toString() ?? '',
+    licenseNumber:  j['license_number']?.toString() ?? '',
+    licenseExpiry:  j['license_expiry']?.toString() ?? '',
+    photoUrl:       j['photo_url']?.toString(),
+    status:         j['status']?.toString() ?? 'active',
   );
 
   Map<String, dynamic> toJson() => {

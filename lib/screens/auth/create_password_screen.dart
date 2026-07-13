@@ -1,9 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import '../../blocs/auth/create_password/create_password_bloc.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
-import '../../repositories/auth_repository.dart';
+import '../../core/theme/app_responsive.dart';
+import '../../core/theme/app_text_styles.dart';
+import '../../core/widgets/error_banner.dart';
 import '../../routes/app_router.dart';
+
+const _pillRadius = 15.0;
+final _pillShadow = [
+  BoxShadow(
+      color: Colors.black.withValues(alpha: 0.06),
+      blurRadius: 10,
+      offset: const Offset(0, 3)),
+];
 
 class CreatePasswordScreen extends StatefulWidget {
   final String identifier;
@@ -21,14 +33,16 @@ class CreatePasswordScreen extends StatefulWidget {
 
 class _CreatePasswordScreenState extends State<CreatePasswordScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _newPassCtrl  = TextEditingController();
-  final _confirmCtrl  = TextEditingController();
-  final _repo         = AuthRepository();
-
-  bool _obscureNew     = true;
+  final _newPassCtrl = TextEditingController();
+  final _confirmCtrl = TextEditingController();
+  bool _obscureNew = true;
   bool _obscureConfirm = true;
-  bool _isLoading      = false;
-  String? _error;
+
+  static const _ctaGradient = LinearGradient(
+    colors: [AppColors.green, Color(0xFF43A047)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
 
   @override
   void dispose() {
@@ -37,37 +51,18 @@ class _CreatePasswordScreenState extends State<CreatePasswordScreen> {
     super.dispose();
   }
 
-  Future<void> _submit() async {
+  void _submit() {
     if (!_formKey.currentState!.validate()) return;
-
-    setState(() { _isLoading = true; _error = null; });
-
-    final result = await _repo.resetPassword(
-      resetToken:      widget.resetToken,
-      password:        _newPassCtrl.text.trim(),
-      confirmPassword: _confirmCtrl.text.trim(),
-    );
-
-    if (!mounted) return;
-    setState(() => _isLoading = false);
-
-    if (result.success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Password created successfully! Please log in.'),
-          backgroundColor: AppColors.secondary,
-        ),
-      );
-      // Clear all auth routes, go to login
-      context.go(AppRoutes.login);
-    } else {
-      setState(() => _error = result.error ?? 'Failed to reset password. Please try again.');
-    }
+    context.read<CreatePasswordBloc>().add(ResetPasswordSubmitted(
+          resetToken: widget.resetToken,
+          password: _newPassCtrl.text.trim(),
+          confirmPassword: _confirmCtrl.text.trim(),
+        ));
   }
 
   String? _validateNewPassword(String? value) {
     if (value == null || value.isEmpty) return AppStrings.fieldRequired;
-    if (value.length < 6) return 'Password must be at least 6 characters.';
+    if (value.length < 6) return AppStrings.passwordMinLength;
     return null;
   }
 
@@ -79,136 +74,313 @@ class _CreatePasswordScreenState extends State<CreatePasswordScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(title: const Text('Create New Password')),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+    return BlocConsumer<CreatePasswordBloc, CreatePasswordState>(
+      listener: (context, state) {
+        if (state is CreatePasswordSuccess) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(AppStrings.passwordCreatedSuccess),
+              backgroundColor: AppColors.secondary,
+            ),
+          );
+          context.go(AppRoutes.login);
+        }
+      },
+      builder: (context, state) {
+        final isLoading = state is CreatePasswordLoading;
+        final error = state is CreatePasswordFailure ? state.message : null;
+        return Scaffold(
+          backgroundColor: AppColors.appbg,
+          body: Column(
             children: [
-              const SizedBox(height: 16),
+              const _Header(),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.all(AppResponsive.padding(context, 24)),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Info banner
+                        Container(
+                          padding: EdgeInsets.all(AppResponsive.padding(context, 14)),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFDF0D5),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: const Color(0xFFF0C674)),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(Icons.warning_amber_rounded,
+                                  color: Color(0xFFB8860B), size: 20),
+                              SizedBox(width: AppResponsive.spacing(context, 10)),
+                              Expanded(
+                                child: Text(
+                                  AppStrings.changePasswordWarning,
+                                  style: TextStyle(
+                                      fontSize: AppResponsive.text(context, 13),
+                                      color: const Color(0xFF8A6116),
+                                      height: 1.35),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        SizedBox(height: AppResponsive.spacing(context, 24)),
 
-              // Icon
-              Container(
-                width: 72, height: 72,
-                margin: const EdgeInsets.only(bottom: 24),
-                decoration: BoxDecoration(
-                  color: AppColors.secondary.withOpacity(0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.lock_reset_rounded, color: AppColors.secondary, size: 36),
-              ),
+                        if (error != null) ...[
+                          ErrorBanner(error),
+                          SizedBox(height: AppResponsive.spacing(context, 16)),
+                        ],
 
-              const Text(
-                'Create New Password',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: AppColors.primary),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Your new password must be different from your previous password.',
-                style: TextStyle(fontSize: 14, color: AppColors.textSecondary, height: 1.5),
-              ),
-              const SizedBox(height: 32),
+                        _UpperLabel(AppStrings.labelNewPassword.toUpperCase()),
+                        SizedBox(height: AppResponsive.spacing(context, 8)),
+                        _PillField(
+                          controller: _newPassCtrl,
+                          hintText: AppStrings.enterNewPassword,
+                          obscureText: _obscureNew,
+                          textInputAction: TextInputAction.next,
+                          validator: _validateNewPassword,
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                                _obscureNew
+                                    ? Icons.visibility_off_outlined
+                                    : Icons.visibility_outlined,
+                                color: AppColors.textLight, size: 20),
+                            onPressed: () => setState(() => _obscureNew = !_obscureNew),
+                          ),
+                        ),
+                        SizedBox(height: AppResponsive.spacing(context, 18)),
 
-              // Error banner
-              if (_error != null) ...[
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: AppColors.danger.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: AppColors.danger.withOpacity(0.3)),
+                        _UpperLabel(AppStrings.labelConfirmPassword.toUpperCase()),
+                        SizedBox(height: AppResponsive.spacing(context, 8)),
+                        _PillField(
+                          controller: _confirmCtrl,
+                          hintText: AppStrings.confirmPassword,
+                          obscureText: _obscureConfirm,
+                          textInputAction: TextInputAction.done,
+                          validator: _validateConfirm,
+                          onSubmitted: (_) => _submit(),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                                _obscureConfirm
+                                    ? Icons.visibility_off_outlined
+                                    : Icons.visibility_outlined,
+                                color: AppColors.textLight, size: 20),
+                            onPressed: () =>
+                                setState(() => _obscureConfirm = !_obscureConfirm),
+                          ),
+                        ),
+                        SizedBox(height: AppResponsive.spacing(context, 28)),
+
+                        // Set New Password
+                        SizedBox(
+                          width: double.infinity,
+                          height: AppResponsive.scale(context, 54),
+                          child: ElevatedButton(
+                            onPressed: isLoading ? null : _submit,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.transparent,
+                              shadowColor: Colors.transparent,
+                              padding: EdgeInsets.zero,
+                            ),
+                            child: Ink(
+                              decoration: BoxDecoration(
+                                gradient: _ctaGradient,
+                                borderRadius: BorderRadius.circular(_pillRadius),
+                                boxShadow: [
+                                  BoxShadow(
+                                      color: AppColors.green.withValues(alpha: 0.35),
+                                      blurRadius: 16,
+                                      offset: const Offset(0, 6)),
+                                ],
+                              ),
+                              child: Container(
+                                alignment: Alignment.center,
+                                child: isLoading
+                                    ? SizedBox(
+                                        width: AppResponsive.scale(context, 22),
+                                        height: AppResponsive.scale(context, 22),
+                                        child: const CircularProgressIndicator(
+                                            color: Colors.white, strokeWidth: 2.5))
+                                    : Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          const Icon(Icons.check_circle_outline_rounded,
+                                              color: Colors.white, size: 20),
+                                          SizedBox(width: AppResponsive.spacing(context, 8)),
+                                          Text(AppStrings.setNewPassword,
+                                              style: AppTextStyles.button(context,
+                                                  color: Colors.white)),
+                                        ],
+                                      ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  child: Row(children: [
-                    const Icon(Icons.error_outline, color: AppColors.danger, size: 18),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text(_error!, style: const TextStyle(color: AppColors.danger, fontSize: 13))),
-                  ]),
-                ),
-                const SizedBox(height: 20),
-              ],
-
-              Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // New Password
-                    const _FieldLabel(label: 'New Password'),
-                    TextFormField(
-                      controller:       _newPassCtrl,
-                      obscureText:      _obscureNew,
-                      textInputAction:  TextInputAction.next,
-                      validator:        _validateNewPassword,
-                      decoration: InputDecoration(
-                        hintText:    AppStrings.enterNewPassword,
-                        prefixIcon:  const Icon(Icons.lock_outline),
-                        suffixIcon:  IconButton(
-                          icon: Icon(_obscureNew ? Icons.visibility_off_outlined : Icons.visibility_outlined),
-                          onPressed: () => setState(() => _obscureNew = !_obscureNew),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Confirm Password
-                    const _FieldLabel(label: 'Confirm Password'),
-                    TextFormField(
-                      controller:       _confirmCtrl,
-                      obscureText:      _obscureConfirm,
-                      textInputAction:  TextInputAction.done,
-                      validator:        _validateConfirm,
-                      onFieldSubmitted: (_) => _submit(),
-                      decoration: InputDecoration(
-                        hintText:    AppStrings.confirmPassword,
-                        prefixIcon:  const Icon(Icons.lock_outline),
-                        suffixIcon:  IconButton(
-                          icon: Icon(_obscureConfirm ? Icons.visibility_off_outlined : Icons.visibility_outlined),
-                          onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 32),
-
-                    // Submit
-                    SizedBox(
-                      width: double.infinity,
-                      height: 52,
-                      child: ElevatedButton(
-                        onPressed: _isLoading ? null : _submit,
-                        child: _isLoading
-                            ? const SizedBox(
-                                width: 22, height: 22,
-                                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
-                              )
-                            : const Text('Set New Password', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                      ),
-                    ),
-                  ],
                 ),
               ),
             ],
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
 
-class _FieldLabel extends StatelessWidget {
-  final String label;
-  const _FieldLabel({required this.label});
+// ─── Header: wave-bottomed navy panel with icon + copy ─────────────────────
+class _Header extends StatelessWidget {
+  const _Header();
 
   @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Text(
-        label,
-        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
-      ),
-    );
+  Widget build(BuildContext context) => ClipPath(
+        clipper: _WaveClipper(),
+        child: Container(
+          width: double.infinity,
+          decoration: const BoxDecoration(gradient: AppColors.primaryGradient),
+          padding: EdgeInsets.fromLTRB(
+            AppResponsive.padding(context, 24),
+            0,
+            AppResponsive.padding(context, 24),
+            AppResponsive.padding(context, 48),
+          ),
+          child: SafeArea(
+            bottom: false,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(height: AppResponsive.spacing(context, 32)),
+                Center(
+                  child: Container(
+                    width: AppResponsive.scale(context, 72),
+                    height: AppResponsive.scale(context, 72),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: Icon(Icons.lock_person_rounded,
+                        color: AppColors.amber, size: AppResponsive.scale(context, 36)),
+                  ),
+                ),
+                SizedBox(height: AppResponsive.spacing(context, 20)),
+                Text(AppStrings.createPassword,
+                    textAlign: TextAlign.center,
+                    style: AppTextStyles.heading1(context, color: Colors.white)),
+                SizedBox(height: AppResponsive.spacing(context, 8)),
+                Text(
+                  AppStrings.createPasswordSubtitle,
+                  textAlign: TextAlign.center,
+                  style: AppTextStyles.body(context,
+                      color: Colors.white.withValues(alpha: 0.65)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+}
+
+// ─── Gentle wave clip for the header's bottom edge ──────────────────────────
+class _WaveClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) {
+    final path = Path()..lineTo(0, size.height - 32);
+    path.quadraticBezierTo(
+        size.width * 0.25, size.height, size.width * 0.5, size.height - 16);
+    path.quadraticBezierTo(
+        size.width * 0.75, size.height - 32, size.width, size.height - 6);
+    path.lineTo(size.width, 0);
+    path.close();
+    return path;
   }
+
+  @override
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
+}
+
+// ─── Uppercase caption label above a field ──────────────────────────────────
+class _UpperLabel extends StatelessWidget {
+  final String label;
+  const _UpperLabel(this.label);
+
+  @override
+  Widget build(BuildContext context) => Text(
+        label,
+        style: TextStyle(
+          fontSize: AppResponsive.text(context, 11),
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.6,
+          color: AppColors.textSecondary,
+        ),
+      );
+}
+
+// ─── Fully-rounded white pill input field ───────────────────────────────────
+class _PillField extends StatelessWidget {
+  final TextEditingController controller;
+  final String hintText;
+  final TextInputAction? textInputAction;
+  final bool obscureText;
+  final Widget? suffixIcon;
+  final ValueChanged<String>? onSubmitted;
+  final String? Function(String?)? validator;
+
+  const _PillField({
+    required this.controller,
+    required this.hintText,
+    this.textInputAction,
+    this.obscureText = false,
+    this.suffixIcon,
+    this.onSubmitted,
+    this.validator,
+  });
+
+  @override
+  Widget build(BuildContext context) => Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(_pillRadius),
+          boxShadow: _pillShadow,
+        ),
+        child: TextFormField(
+          controller: controller,
+          obscureText: obscureText,
+          textInputAction: textInputAction,
+          onFieldSubmitted: onSubmitted,
+          validator: validator,
+          style: AppTextStyles.body(context, color: AppColors.primary),
+          decoration: InputDecoration(
+            filled: false,
+            hintText: hintText,
+            hintStyle: AppTextStyles.body(context, color: AppColors.textLight),
+            prefixIcon: const Icon(Icons.lock_outline_rounded, color: AppColors.amber),
+            suffixIcon: suffixIcon,
+            contentPadding: EdgeInsets.symmetric(
+                horizontal: AppResponsive.padding(context, 16),
+                vertical: AppResponsive.padding(context, 16)),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(_pillRadius),
+              borderSide: const BorderSide(color: AppColors.greenPale, width: 1),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(_pillRadius),
+              borderSide: const BorderSide(color: AppColors.greenPale, width: 1),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(_pillRadius),
+              borderSide: const BorderSide(color: AppColors.green, width: 1.5),
+            ),
+            errorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(_pillRadius),
+              borderSide: const BorderSide(color: AppColors.danger, width: 1.5),
+            ),
+          ),
+        ),
+      );
 }

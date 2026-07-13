@@ -2,7 +2,7 @@ class ApiConstants {
   ApiConstants._();
 
   static const String _base =
-      'https://demo1.evirtualservices.com/fleetcheckapp/api/';
+      'https://demo1.evirtualservices.com/fleetcheckapp/api';
 
   static String get baseUrl => _base;
 

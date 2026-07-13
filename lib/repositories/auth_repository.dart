@@ -1,6 +1,8 @@
+import 'package:dio/dio.dart';
 import '../core/network/api_service.dart';
 import '../core/constants/api_constants.dart';
 import '../core/services/storage_service.dart';
+import '../core/services/session_manager.dart';
 import '../models/driver_model.dart';
 
 class AuthRepository {
@@ -8,35 +10,65 @@ class AuthRepository {
   final StorageService _storage;
 
   AuthRepository({ApiService? api, StorageService? storage})
-      : _api = api ?? ApiService(),
-        _storage = storage ?? StorageService();
+      : _api     = api     ?? ApiService(),
+        _storage  = storage ?? StorageService();
 
   Future<ApiResult<DriverModel>> login({
     required String identifier,
     required String password,
   }) async {
-    return _api.call<DriverModel>(
-      request: () => _api.post(
-        ApiConstants.login,
-        data: {
-          'identifier': identifier,
-          'password': password,
-        },
-      ),
-      fromJson: (data) {
-        final responseData = data['data'] as Map<String, dynamic>;
+    try {
+      // Make a single raw request so we can extract both the driver AND
+      // the token from the same response, then await the token write
+      // before returning — preventing the race condition where the app
+      // navigated to the next screen before the token was persisted.
+      final response = await _api.post(ApiConstants.login, data: {
+        'identifier': identifier,
+        'password': password,
+      });
 
-        final driver = DriverModel.fromJson(
-          responseData['driver'] as Map<String, dynamic>,
-        );
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final envelope = response.data as Map<String, dynamic>;
+        if (envelope['success'] == true) {
+          // API envelope: { "success": true, "data": { "driver": {...}, "token": "..." } }
+          // Must read from the inner 'data' key, not from envelope root.
+          final inner  = envelope['data'] as Map<String, dynamic>;
+          final driver = DriverModel.fromJson(inner['driver'] as Map<String, dynamic>);
+          final token  = inner['token'] as String;
 
-        _storage.saveToken(responseData['token'] as String);
-        _storage.saveDriverData(driver.toJson());
-        _storage.setLoggedIn(true);
+          // AWAIT every storage write before returning — all three are
+          // async operations; not awaiting them was the root cause of
+          // the 401 "Missing Authorization header" error on QR scan.
+          await _storage.saveToken(token);
+          await _storage.saveDriverData(driver.toJson());
+          await _storage.setLoggedIn(true);
+          // Saved so an expired token can be silently renewed later
+          // without interrupting the driver mid-inspection — see
+          // SessionManager / ApiService's 401 handling.
+          await _storage.saveCredentials(identifier, password);
+          // Allow a later 401 to trigger the forced-logout flow again —
+          // it was disabled after being handled once.
+          SessionManager.reset();
 
-        return driver;
-      },
-    );
+          return ApiResult.success(driver);
+        }
+        return ApiResult.error(envelope['message'] as String? ?? 'Login failed');
+      }
+      return ApiResult.error('Server error: ${response.statusCode}');
+    } on DioException catch (e) {
+      // The backend returns 401 (not just for auth-token issues but) for
+      // wrong-credential login attempts too, with the real reason in the
+      // JSON body's 'message' field — surface that instead of the raw
+      // DioException text (e.g. "Invalid Password" instead of a dump of
+      // the HTTP status explanation).
+      final responseData = e.response?.data;
+      final msg = (responseData is Map ? responseData['message'] : null) ??
+          e.message ??
+          'Login failed';
+      return ApiResult.error(msg.toString());
+    } on Exception catch (e) {
+      return ApiResult.error('Login failed: $e');
+    }
   }
 
   Future<void> logout() async {
@@ -95,7 +127,7 @@ class AuthRepository {
     required String newPassword,
     required String confirmPassword,
   }) async {
-    return _api.call<bool>(
+    final result = await _api.call<bool>(
       request: () => _api.post(ApiConstants.changePassword, data: {
         'current_password': currentPassword,
         'new_password': newPassword,
@@ -103,6 +135,16 @@ class AuthRepository {
       }),
       fromJson: (_) => true,
     );
+    if (result.success) {
+      // Keep the saved credentials in sync with the new password so a
+      // later silent relogin (on token expiry) doesn't fail with the
+      // now-stale old password.
+      final creds = await _storage.getCredentials();
+      if (creds != null) {
+        await _storage.saveCredentials(creds.identifier, newPassword);
+      }
+    }
+    return result;
   }
 
   DriverModel? getCachedDriver() {

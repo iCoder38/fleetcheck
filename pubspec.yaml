@@ -11,7 +11,7 @@ dependencies:
     sdk: flutter
 
   # State Management
-  flutter_riverpod: ^2.5.1
+  flutter_bloc: ^8.1.6
 
   # Navigation
   go_router: ^13.2.0
@@ -63,9 +63,21 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
+  bloc_test: ^9.1.7
 
 flutter:
   uses-material-design: true
   assets:
     - assets/images/
     - assets/icons/
+  fonts:
+    - family: Verdana
+      fonts:
+        - asset: assets/fonts/verdana.ttf
+        - asset: assets/fonts/verdanab.ttf
+          weight: 700
+        - asset: assets/fonts/verdanai.ttf
+          style: italic
+        - asset: assets/fonts/verdanaz.ttf
+          weight: 700
+          style: italic

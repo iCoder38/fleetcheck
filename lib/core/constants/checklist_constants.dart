@@ -83,10 +83,17 @@ class ChecklistConstants {
         ChecklistItem(id: 's5_seatbelt',     label: 'Seat Belt',           options: availableOptions),
       ],
     ),
+    // Section 6: Additional Notes — items is empty, which triggers the notes
+    // text area in ChecklistScreen via the _isNotesSection getter.
+    // Character limit: 1000. Optional — driver may skip.
+    const ChecklistSection(
+      id: 's6_notes', title: 'Additional Notes', applicableTo: 'both',
+      items: [], // empty = notes text area, no checkboxes
+    ),
   ];
 
   static List<ChecklistSection> postTripSections() => [
-    ...preTripSections(),
+    ...preTripSections().where((s) => s.id != 's6_notes'),
     const ChecklistSection(
       id: 's6', title: 'Vehicle Damage', applicableTo: 'post',
       items: [
@@ -95,6 +102,11 @@ class ChecklistConstants {
         ChecklistItem(id: 's6_mechanical',  label: 'Mechanical Issues', options: yesNoOptions),
         ChecklistItem(id: 's6_accident',    label: 'Accident Report',   options: yesNoOptions),
       ],
+    ),
+    // Section 7: Additional Notes for Post-Trip
+    const ChecklistSection(
+      id: 's7_notes', title: 'Additional Notes', applicableTo: 'post',
+      items: [], // empty = notes text area
     ),
   ];
 

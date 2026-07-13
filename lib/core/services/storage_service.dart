@@ -27,6 +27,28 @@ class StorageService {
   Future<void> deleteToken() =>
       _secure.delete(key: AppConstants.keyAuthToken);
 
+  // ─── Saved credentials (secure) ────────────────────────
+  // Used to silently re-authenticate via /auth/login when the access
+  // token expires, so a session timeout doesn't interrupt an in-progress
+  // inspection. Cleared on explicit logout or when a silent relogin
+  // attempt itself fails (see SessionManager.handleSessionExpired).
+  Future<void> saveCredentials(String identifier, String password) async {
+    await _secure.write(key: AppConstants.keyAuthIdentifier, value: identifier);
+    await _secure.write(key: AppConstants.keyAuthPassword, value: password);
+  }
+
+  Future<StoredCredentials?> getCredentials() async {
+    final identifier = await _secure.read(key: AppConstants.keyAuthIdentifier);
+    final password = await _secure.read(key: AppConstants.keyAuthPassword);
+    if (identifier == null || password == null) return null;
+    return StoredCredentials(identifier: identifier, password: password);
+  }
+
+  Future<void> deleteCredentials() async {
+    await _secure.delete(key: AppConstants.keyAuthIdentifier);
+    await _secure.delete(key: AppConstants.keyAuthPassword);
+  }
+
   // ─── Driver Data (shared prefs) ───────────────────────
   Future<void> saveDriverData(Map<String, dynamic> data) async {
     await _prefs.setString(AppConstants.keyDriverData, jsonEncode(data));
@@ -39,17 +61,17 @@ class StorageService {
   }
 
   Future<void> deleteDriverData() =>
-      Future(() => _prefs.remove(AppConstants.keyDriverData));
+      _prefs.remove(AppConstants.keyDriverData);
 
   // ─── Login state ─────────────────────────────────────
   Future<void> setLoggedIn(bool val) =>
-      Future(() => _prefs.setBool(AppConstants.keyIsLoggedIn, val));
+      _prefs.setBool(AppConstants.keyIsLoggedIn, val);
 
   bool get isLoggedIn => _prefs.getBool(AppConstants.keyIsLoggedIn) ?? false;
 
   // ─── First launch ────────────────────────────────────
   Future<void> setFirstLaunchDone() =>
-      Future(() => _prefs.setBool(AppConstants.keyIsFirstLaunch, false));
+      _prefs.setBool(AppConstants.keyIsFirstLaunch, false);
 
   bool get isFirstLaunch =>
       _prefs.getBool(AppConstants.keyIsFirstLaunch) ?? true;
@@ -59,4 +81,10 @@ class StorageService {
     await _secure.deleteAll();
     await _prefs.clear();
   }
+}
+
+class StoredCredentials {
+  final String identifier;
+  final String password;
+  const StoredCredentials({required this.identifier, required this.password});
 }

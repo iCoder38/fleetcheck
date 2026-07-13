@@ -1,9 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import '../../blocs/auth/login/login_bloc.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
-import '../../repositories/auth_repository.dart';
 import '../../routes/app_router.dart';
+import '../../core/theme/app_responsive.dart';
+import '../../core/theme/app_text_styles.dart';
+import '../../core/widgets/error_banner.dart';
+
+// Bright accent green used for this screen's branding (matches the
+// FleetCheck logo/wordmark), independent of the app's amber CTA color.
+const _brightGreen = Color(0xFF4CAF50);
+
+// Shared pill radius/shadow so input fields and buttons stay visually
+// consistent with each other.
+const _pillRadius = 15.0;
+final _pillShadow = [
+  BoxShadow(
+      color: Colors.black.withValues(alpha: 0.06),
+      blurRadius: 10,
+      offset: const Offset(0, 3)),
+];
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -16,11 +34,13 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _identifierCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
-  final _repo = AuthRepository();
-
   bool _obscurePassword = true;
-  bool _isLoading = false;
-  String? _errorMessage;
+
+  static const _loginGradient = LinearGradient(
+    colors: [AppColors.green, Color(0xFF43A047)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
 
   @override
   void dispose() {
@@ -29,171 +49,76 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  Future<void> _login() async {
+  void _login() {
     if (!_formKey.currentState!.validate()) return;
-
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
-
-    final result = await _repo.login(
-      identifier: _identifierCtrl.text.trim(),
-      password: _passwordCtrl.text,
-    );
-
-    if (!mounted) return;
-    setState(() => _isLoading = false);
-
-    if (result.success) {
-      // print("PUSH ME TO DASHBOARD");
-      context.go(AppRoutes.dashboard);
-    } else {
-      setState(() => _errorMessage = result.error ?? AppStrings.invalidCreds);
-    }
+    context.read<LoginBloc>().add(LoginSubmitted(
+          identifier: _identifierCtrl.text.trim(),
+          password: _passwordCtrl.text,
+        ));
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        width: double.infinity,
-        height: double.infinity,
-        decoration: const BoxDecoration(gradient: AppColors.splashGradient),
-        child: SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Column(
-              children: [
-                const SizedBox(height: 48),
-
-                // ── Logo ──────────────────────────────────────────
-                Container(
-                  width: 72,
-                  height: 72,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                          color: Colors.black.withOpacity(0.2), blurRadius: 20)
-                    ],
-                  ),
-                  child: const Icon(Icons.local_shipping_rounded,
-                      color: AppColors.primary, size: 38),
-                ),
-                const SizedBox(height: 14),
-                RichText(
-                  text: const TextSpan(children: [
-                    TextSpan(
-                        text: 'Fleet',
-                        style: TextStyle(
-                            fontSize: 30,
-                            fontWeight: FontWeight.w800,
-                            fontStyle: FontStyle.italic,
-                            color: Colors.white)),
-                    TextSpan(
-                        text: 'Check',
-                        style: TextStyle(
-                            fontSize: 30,
-                            fontWeight: FontWeight.w800,
-                            fontStyle: FontStyle.italic,
-                            color: AppColors.greenLight)),
-                  ]),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  AppStrings.tagline,
-                  style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.white.withOpacity(0.55),
-                      fontStyle: FontStyle.italic),
-                ),
-                const SizedBox(height: 36),
-
-                // ── Login Card ────────────────────────────────────
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                          color: Colors.black.withOpacity(0.15), blurRadius: 24)
-                    ],
-                  ),
-                  padding: const EdgeInsets.all(28),
+    return BlocConsumer<LoginBloc, LoginState>(
+      listener: (context, state) {
+        if (state is LoginSuccess) context.go(AppRoutes.dashboard);
+      },
+      builder: (context, state) {
+        final isLoading = state is LoginLoading;
+        final errorMessage = state is LoginFailure ? state.message : null;
+        return Scaffold(
+          backgroundColor: AppColors.appbg,
+          body: Column(
+            children: [
+              _Header(),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: AppResponsive.horizontal(context, value: 24),
                   child: Form(
                     key: _formKey,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('Driver Login',
-                            style: TextStyle(
-                                fontSize: 22,
-                                fontWeight: FontWeight.w800,
-                                color: AppColors.primary)),
-                        const SizedBox(height: 4),
-                        const Text('Sign in with your Employee ID or Phone',
-                            style: TextStyle(
-                                fontSize: 13, color: AppColors.textSecondary)),
-                        const SizedBox(height: 22),
+                        SizedBox(height: AppResponsive.spacing(context, 24)),
 
                         // Error
-                        if (_errorMessage != null) ...[
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: AppColors.redLight,
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                  color: AppColors.danger.withOpacity(0.3)),
-                            ),
-                            child: Row(children: [
-                              const Icon(Icons.error_outline,
-                                  color: AppColors.danger, size: 18),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                  child: Text(_errorMessage!,
-                                      style: const TextStyle(
-                                          color: AppColors.danger,
-                                          fontSize: 13))),
-                            ]),
-                          ),
-                          const SizedBox(height: 16),
+                        if (errorMessage != null) ...[
+                          ErrorBanner(errorMessage),
+                          SizedBox(height: AppResponsive.spacing(context, 16)),
                         ],
 
                         // Employee ID
-                        const _FieldLabel('Employee ID / Badge ID / Phone'),
-                        TextFormField(
+                        _UpperLabel(AppStrings.labelIdentifier.toUpperCase()),
+                        SizedBox(height: AppResponsive.spacing(context, 8)),
+                        _PillField(
                           controller: _identifierCtrl,
                           textInputAction: TextInputAction.next,
-                          decoration: const InputDecoration(
-                            hintText: AppStrings.hintIdentifier,
-                            prefixIcon: Icon(Icons.person_outline_rounded),
-                          ),
+                          hintText: AppStrings.hintIdentifier,
+                          prefixIcon: Icons.person_rounded,
+                          prefixIconColor: const Color(0xFF4A90D9),
                           validator: (v) => (v == null || v.trim().isEmpty)
                               ? AppStrings.fieldRequired
                               : null,
                         ),
-                        const SizedBox(height: 16),
+                        SizedBox(height: AppResponsive.spacing(context, 18)),
 
                         // Password
-                        const _FieldLabel('Password'),
-                        TextFormField(
+                        _UpperLabel(AppStrings.labelPassword.toUpperCase()),
+                        SizedBox(height: AppResponsive.spacing(context, 8)),
+                        _PillField(
                           controller: _passwordCtrl,
-                          obscureText: _obscurePassword,
                           textInputAction: TextInputAction.done,
-                          onFieldSubmitted: (_) => _login(),
-                          decoration: InputDecoration(
-                            hintText: AppStrings.hintPassword,
-                            prefixIcon: const Icon(Icons.lock_outline_rounded),
-                            suffixIcon: IconButton(
-                              icon: Icon(_obscurePassword
-                                  ? Icons.visibility_off_outlined
-                                  : Icons.visibility_outlined),
-                              onPressed: () => setState(
-                                  () => _obscurePassword = !_obscurePassword),
-                            ),
+                          hintText: AppStrings.hintPassword,
+                          prefixIcon: Icons.lock_rounded,
+                          prefixIconColor: AppColors.amber,
+                          obscureText: _obscurePassword,
+                          onSubmitted: (_) => _login(),
+                          suffixIcon: IconButton(
+                            icon: Icon(_obscurePassword
+                                ? Icons.visibility_off_outlined
+                                : Icons.visibility_outlined),
+                            onPressed: () => setState(
+                                () => _obscurePassword = !_obscurePassword),
                           ),
                           validator: (v) => (v == null || v.isEmpty)
                               ? AppStrings.fieldRequired
@@ -207,78 +132,360 @@ class _LoginScreenState extends State<LoginScreen> {
                             onPressed: () =>
                                 context.push(AppRoutes.forgotPassword),
                             style: TextButton.styleFrom(
-                              foregroundColor: AppColors.secondary,
-                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              foregroundColor: AppColors.green,
+                              padding: EdgeInsets.symmetric(
+                                  vertical: AppResponsive.padding(context, 8)),
                             ),
-                            child: const Text(AppStrings.forgotPassword,
-                                style: TextStyle(
-                                    fontWeight: FontWeight.w600, fontSize: 13)),
+                            child: Text(AppStrings.forgotPassword,
+                                style: AppTextStyles.label(context,
+                                    color: AppColors.green)),
                           ),
                         ),
-                        const SizedBox(height: 8),
+                        SizedBox(height: AppResponsive.spacing(context, 8)),
 
                         // Login button
                         SizedBox(
                           width: double.infinity,
-                          height: 52,
+                          height: AppResponsive.scale(context, 54),
                           child: ElevatedButton(
-                            onPressed: _isLoading ? null : _login,
-                            child: _isLoading
-                                ? const SizedBox(
-                                    width: 22,
-                                    height: 22,
-                                    child: CircularProgressIndicator(
-                                        color: Colors.white, strokeWidth: 2.5))
-                                : const Text(AppStrings.login,
-                                    style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w700)),
+                            onPressed: isLoading ? null : _login,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.transparent,
+                              shadowColor: Colors.transparent,
+                              padding: EdgeInsets.zero,
+                            ),
+                            child: Ink(
+                              decoration: BoxDecoration(
+                                gradient: _loginGradient,
+                                borderRadius:
+                                    BorderRadius.circular(_pillRadius),
+                                boxShadow: [
+                                  BoxShadow(
+                                      color: AppColors.green
+                                          .withValues(alpha: 0.35),
+                                      blurRadius: 16,
+                                      offset: const Offset(0, 6)),
+                                ],
+                              ),
+                              child: Container(
+                                alignment: Alignment.center,
+                                child: isLoading
+                                    ? SizedBox(
+                                        width: AppResponsive.scale(context, 22),
+                                        height:
+                                            AppResponsive.scale(context, 22),
+                                        child: const CircularProgressIndicator(
+                                            color: Colors.white,
+                                            strokeWidth: 2.5))
+                                    : Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          const Icon(
+                                              Icons.arrow_forward_rounded,
+                                              color: Colors.white,
+                                              size: 20),
+                                          SizedBox(
+                                              width: AppResponsive.spacing(
+                                                  context, 8)),
+                                          Text(AppStrings.login,
+                                              style: AppTextStyles.button(
+                                                  context,
+                                                  color: Colors.white)),
+                                        ],
+                                      ),
+                              ),
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 12),
+                        SizedBox(height: AppResponsive.spacing(context, 14)),
 
                         // Contact Support
-                        SizedBox(
-                          width: double.infinity,
-                          height: 48,
-                          child: OutlinedButton.icon(
-                            onPressed: () => context.push(AppRoutes.help),
-                            icon: const Icon(Icons.headset_mic_outlined,
-                                size: 18),
-                            label: const Text(AppStrings.contactSupport,
-                                style: TextStyle(fontWeight: FontWeight.w600)),
+                        Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(_pillRadius),
+                            boxShadow: _pillShadow,
+                          ),
+                          child: SizedBox(
+                            width: double.infinity,
+                            height: AppResponsive.scale(context, 52),
+                            child: OutlinedButton.icon(
+                              onPressed: () => context.push(AppRoutes.help),
+                              style: OutlinedButton.styleFrom(
+                                backgroundColor: Colors.white,
+                                side: const BorderSide(color: AppColors.border),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius:
+                                        BorderRadius.circular(_pillRadius)),
+                              ),
+                              icon: Icon(Icons.chat_bubble_outline_rounded,
+                                  size: AppResponsive.scale(context, 18),
+                                  color: AppColors.textPrimary),
+                              label: RichText(
+                                text: TextSpan(
+                                  style: AppTextStyles.label(context,
+                                      color: AppColors.textSecondary),
+                                  children: [
+                                    const TextSpan(
+                                        text: AppStrings.needHelpPrefix),
+                                    TextSpan(
+                                        text: AppStrings.contactSupport,
+                                        style: AppTextStyles.label(context,
+                                                color: AppColors.green)
+                                            .copyWith(
+                                                fontWeight: FontWeight.w700)),
+                                  ],
+                                ),
+                              ),
+                            ),
                           ),
                         ),
+                        SizedBox(height: AppResponsive.spacing(context, 20)),
+                        Center(
+                          child: Text(
+                            AppStrings.copyright(DateTime.now().year),
+                            style: AppTextStyles.bodySmall(context,
+                                color: AppColors.textLight),
+                          ),
+                        ),
+                        SizedBox(height: AppResponsive.spacing(context, 20)),
                       ],
                     ),
                   ),
                 ),
-                const SizedBox(height: 28),
-                Text(
-                  '© ${DateTime.now().year} FleetCheck. All rights reserved.',
-                  style: TextStyle(
-                      fontSize: 11, color: Colors.white.withOpacity(0.35)),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ─── Header: logo + wordmark + welcome copy, wave-bottomed navy panel ──────
+class _Header extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) => ClipPath(
+        clipper: _WaveClipper(),
+        child: Container(
+          width: double.infinity,
+          decoration: const BoxDecoration(gradient: AppColors.primaryGradient),
+          padding: EdgeInsets.fromLTRB(
+            AppResponsive.padding(context, 24),
+            0,
+            AppResponsive.padding(context, 24),
+            AppResponsive.padding(context, 48),
+          ),
+          child: SafeArea(
+            bottom: false,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(height: AppResponsive.spacing(context, 24)),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    const _LogoMark(),
+                    SizedBox(width: AppResponsive.spacing(context, 14)),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          RichText(
+                            text: TextSpan(
+                              children: [
+                                TextSpan(
+                                  text: 'Fleet',
+                                  style: AppTextStyles.heading1(context,
+                                          color: Colors.white)
+                                      .copyWith(fontStyle: FontStyle.italic),
+                                ),
+                                TextSpan(
+                                  text: 'Check',
+                                  style: AppTextStyles.heading1(context,
+                                          color: _brightGreen)
+                                      .copyWith(fontStyle: FontStyle.italic),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Text(
+                            AppStrings.tagline,
+                            style: AppTextStyles.bodySmall(context,
+                                color: Colors.white.withValues(alpha: 0.6)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 20),
+                SizedBox(height: AppResponsive.spacing(context, 20)),
+                Text(AppStrings.welcomeBackTitle,
+                    style:
+                        AppTextStyles.heading1(context, color: Colors.white)),
+                SizedBox(height: AppResponsive.spacing(context, 4)),
+                Text(AppStrings.pleaseLoginToContinue,
+                    style: AppTextStyles.body(context,
+                        color: Colors.white.withValues(alpha: 0.7))),
               ],
             ),
           ),
         ),
+      );
+}
+
+// ─── Logo mark: QR-in-frame icon with a check badge ─────────────────────────
+class _LogoMark extends StatelessWidget {
+  const _LogoMark();
+
+  @override
+  Widget build(BuildContext context) {
+    final size = AppResponsive.scale(context, 56);
+    return SizedBox(
+      width: size,
+      height: size + AppResponsive.scale(context, 8),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: _brightGreen, width: 2),
+            ),
+            child: Icon(Icons.qr_code_2_rounded,
+                color: AppColors.primary, size: size * 0.62),
+          ),
+          Positioned(
+            bottom: -6,
+            right: -6,
+            child: Container(
+              padding: const EdgeInsets.all(3),
+              decoration: const BoxDecoration(
+                color: AppColors.primary,
+                shape: BoxShape.circle,
+              ),
+              child: Container(
+                width: AppResponsive.scale(context, 20),
+                height: AppResponsive.scale(context, 20),
+                decoration: const BoxDecoration(
+                  color: AppColors.green,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.check_rounded,
+                    color: Colors.white, size: 14),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _FieldLabel extends StatelessWidget {
-  final String label;
-  const _FieldLabel(this.label);
+// ─── Gentle wave clip for the header's bottom edge ──────────────────────────
+class _WaveClipper extends CustomClipper<Path> {
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(bottom: 6),
-        child: Text(label,
-            style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary)),
+  Path getClip(Size size) {
+    final path = Path()..lineTo(0, size.height - 32);
+    path.quadraticBezierTo(
+        size.width * 0.25, size.height, size.width * 0.5, size.height - 16);
+    path.quadraticBezierTo(
+        size.width * 0.75, size.height - 32, size.width, size.height - 6);
+    path.lineTo(size.width, 0);
+    path.close();
+    return path;
+  }
+
+  @override
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
+}
+
+// ─── Uppercase caption label above a field ──────────────────────────────────
+class _UpperLabel extends StatelessWidget {
+  final String label;
+  const _UpperLabel(this.label);
+
+  @override
+  Widget build(BuildContext context) => Text(
+        label,
+        style: TextStyle(
+          fontSize: AppResponsive.text(context, 11),
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.6,
+          color: AppColors.textSecondary,
+        ),
+      );
+}
+
+// ─── Fully-rounded white pill input field ───────────────────────────────────
+class _PillField extends StatelessWidget {
+  final TextEditingController controller;
+  final String hintText;
+  final IconData prefixIcon;
+  final Color prefixIconColor;
+  final TextInputAction? textInputAction;
+  final bool obscureText;
+  final Widget? suffixIcon;
+  final ValueChanged<String>? onSubmitted;
+  final String? Function(String?)? validator;
+
+  const _PillField({
+    required this.controller,
+    required this.hintText,
+    required this.prefixIcon,
+    required this.prefixIconColor,
+    this.textInputAction,
+    this.obscureText = false,
+    this.suffixIcon,
+    this.onSubmitted,
+    this.validator,
+  });
+
+  @override
+  Widget build(BuildContext context) => Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(_pillRadius),
+          boxShadow: _pillShadow,
+        ),
+        child: TextFormField(
+          controller: controller,
+          obscureText: obscureText,
+          textInputAction: textInputAction,
+          onFieldSubmitted: onSubmitted,
+          validator: validator,
+          style: AppTextStyles.body(context, color: AppColors.primary),
+          decoration: InputDecoration(
+            filled: false,
+            hintText: hintText,
+            hintStyle: AppTextStyles.body(context, color: AppColors.textLight),
+            prefixIcon: Icon(prefixIcon, color: prefixIconColor),
+            suffixIcon: suffixIcon,
+            contentPadding: EdgeInsets.symmetric(
+                horizontal: AppResponsive.padding(context, 16),
+                vertical: AppResponsive.padding(context, 16)),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(_pillRadius),
+              borderSide:
+                  const BorderSide(color: AppColors.greenPale, width: 1),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(_pillRadius),
+              borderSide:
+                  const BorderSide(color: AppColors.greenPale, width: 1),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(_pillRadius),
+              borderSide: const BorderSide(color: AppColors.green, width: 1.5),
+            ),
+            errorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(_pillRadius),
+              borderSide: const BorderSide(color: AppColors.danger, width: 1.5),
+            ),
+          ),
+        ),
       );
 }

@@ -23,21 +23,27 @@ class InspectionRepository {
   }
 
   Future<ApiResult<List<InspectionResult>>> getInspections({
-    String? dateRange,
+    String? dateRange,    // 'today' | 'yesterday' | 'last_7_days' | 'custom' | null
+    String? dateFrom,     // 'YYYY-MM-DD' for custom range start
+    String? dateTo,       // 'YYYY-MM-DD' for custom range end
     String? vehicleNumber,
-    String? type,
-    String? status,
+    String? type,         // 'pre_trip' | 'post_trip' | null
+    String? status,       // 'completed' | 'pending' | 'under_review' | null
     int page = 1,
+    int limit = 20,
   }) async {
     return _api.call<List<InspectionResult>>(
       request: () => _api.get(ApiConstants.inspectionList, params: {
         if (dateRange != null) 'date_range': dateRange,
-        if (vehicleNumber != null) 'vehicle_number': vehicleNumber,
-        if (type != null) 'type': type,
-        if (status != null) 'status': status,
-        'page': page,
+        if (dateFrom != null)  'date_from':  dateFrom,
+        if (dateTo != null)    'date_to':    dateTo,
+        if (vehicleNumber != null && vehicleNumber.isNotEmpty) 'vehicle_number': vehicleNumber,
+        if (type != null)      'type':   type,
+        if (status != null)    'status': status,
+        'page':  page,
+        'limit': limit,
       }),
-      fromJson: (data) => (data['inspections'] as List)
+      fromJson: (data) => (data['inspections'] as List? ?? [])
           .map((e) => InspectionResult.fromJson(e as Map<String, dynamic>))
           .toList(),
     );
