@@ -40,6 +40,8 @@ class _QrScannerScreenState extends State<QrScannerScreen>
 
   // ── State machine ─────────────────────────────────────────────────────────
   _ScanState _state      = _ScanState.scanning;
+  // Persists session_ref across multiple zone QR scans in one walk-around
+  String _currentSessionRef = '';
   bool       _torchOn    = false;
   String     _errorTitle = '';
   String     _errorMsg   = '';
@@ -81,12 +83,21 @@ class _QrScannerScreenState extends State<QrScannerScreen>
     await _controller.stop();
 
     // ── Detect Zone QR before calling any API ─────────────────
-    // Zone QRs always start with ZQR- and must go to zone flow
     if (raw.startsWith('ZQR-')) {
-      await context.push(AppRoutes.zoneWalkAround, extra: {
-        'qr_code': raw,
-        'qr_data': <String, dynamic>{},
-      });
+      final result = await context.push<Map<String, dynamic>>(
+        AppRoutes.zoneWalkAround,
+        extra: {
+          'qr_code':    raw,
+          'qr_data':    <String, dynamic>{
+            // Pass session_ref forward so all zone scans share the same session
+            'session_ref': _currentSessionRef,
+          },
+        },
+      );
+      // Capture session_ref from the returned result for the next zone scan
+      if (result != null && result['session_ref'] != null) {
+        _currentSessionRef = result['session_ref'] as String;
+      }
       if (mounted) _reset();
       return;
     }

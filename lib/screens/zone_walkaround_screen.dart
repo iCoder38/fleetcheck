@@ -32,6 +32,9 @@ class _ZoneWalkAroundScreenState extends State<ZoneWalkAroundScreen> {
   Map<String, dynamic>? _zoneScan;
   Map<String, dynamic>? _progress;
   List<Map<String, dynamic>> _checklistItems = [];
+
+  // session_ref persists across all zone scans for the same walk-around.
+  // Passed in via widget.qrData if coming from a previous zone scan.
   String _sessionRef = '';
 
   // Checklist responses for this zone
@@ -44,31 +47,34 @@ class _ZoneWalkAroundScreenState extends State<ZoneWalkAroundScreen> {
   @override
   void initState() {
     super.initState();
+    // Restore session_ref from previous zone scan if available
+    _sessionRef = widget.qrData['session_ref'] as String? ?? '';
     _loadZoneScan();
   }
 
   // ── Call zone-scan API ────────────────────────────────────
   Future<void> _loadZoneScan() async {
     setState(() { _loading = true; _error = ''; });
-    final res = await _repo.zoneScan(
-      qrCode: widget.qrCode,
-      sessionRef: _sessionRef,
+    final result = await _repo.zoneScan(
+      qrCode:         widget.qrCode,
+      sessionRef:     _sessionRef,
       inspectionType: 'pre_trip',
     );
     if (!mounted) return;
-    if (res.success && res.data != null) {
-      final data = res.data!;
+    if (result.success && result.data != null) {
+      final data = result.data!;
       setState(() {
-        _zoneScan  = data['zone_scan'];
-        _progress  = data['progress'];
-        _sessionRef= data['zone_scan']?['session_ref'] ?? _sessionRef;
+        _zoneScan   = data['zone_scan'] as Map<String, dynamic>?;
+        _progress   = data['progress']  as Map<String, dynamic>?;
+        _sessionRef = (_zoneScan?['session_ref'] as String?) ?? _sessionRef;
         final items = data['checklist']?['items'] as List? ?? [];
-        _checklistItems = items.map<Map<String,dynamic>>((e) => Map<String,dynamic>.from(e)).toList();
+        _checklistItems = items.map<Map<String,dynamic>>(
+            (e) => Map<String,dynamic>.from(e as Map)).toList();
         _loading = false;
       });
     } else {
       setState(() {
-        _error   = res.error ?? 'Zone scan failed.';
+        _error   = result.error ?? 'Zone scan failed.';
         _loading = false;
       });
     }
@@ -92,32 +98,41 @@ class _ZoneWalkAroundScreenState extends State<ZoneWalkAroundScreen> {
       'response':   e.value,
     }).toList();
 
-    final res = await _repo.submitZone(
-      zoneScanId: _zoneScan?['zone_scan_id'],
-      sessionRef: _sessionRef,
-      responses: responsesList,
+    final result = await _repo.submitZone(
+      zoneScanId:  _zoneScan?['zone_scan_id'],
+      sessionRef:  _sessionRef,
+      responses:   responsesList,
     );
+
     if (!mounted) return;
 
-    if (res.success && res.data != null) {
-      final allComplete = res.data?['all_complete'] == true;
-      if (allComplete) {
-        // All zones done — show completion screen
-        _showAllCompleteDialog();
+    try {
+      if (result.success && result.data != null) {
+        final allComplete = result.data!['all_complete'] == true;
+        if (allComplete) {
+          // All zones done — show completion screen
+          _showAllCompleteDialog();
+        } else {
+          // Go back to scanner for next zone
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+              'Zone "${_zoneScan?['zone_name']}" complete! '
+              'Scan the next zone QR code.',
+            ),
+            backgroundColor: AppColors.secondary,
+          ));
+          // Pass session_ref back so next zone continues same walk-around session
+          context.pop({'session_ref': _sessionRef});
+        }
       } else {
-        // Go back to scanner for next zone
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(
-            'Zone "${_zoneScan?['zone_name']}" complete! '
-            'Scan the next zone QR code.',
-          ),
-          backgroundColor: AppColors.secondary,
+          content: Text(result.error ?? 'Submit failed.'),
+          backgroundColor: AppColors.danger,
         ));
-        context.pop();
       }
-    } else {
+    } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(res.error ?? 'Submit failed.'),
+        content: Text('Error: $e'),
         backgroundColor: AppColors.danger,
       ));
     }
@@ -168,6 +183,7 @@ class _ZoneWalkAroundScreenState extends State<ZoneWalkAroundScreen> {
               ),
               onPressed: () {
                 Navigator.pop(context);
+                // Pop back to scanner/home
                 context.go(AppRoutes.dashboard);
               },
               child: const Text('Done',
