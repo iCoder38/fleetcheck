@@ -1,59 +1,108 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
-import '../../blocs/inspection/inspection_submit/inspection_submit_bloc.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
 import '../../models/inspection_model.dart';
+import '../../repositories/inspection_repository.dart';
 import '../../routes/app_router.dart';
 
 class InspectionReviewScreen extends StatefulWidget {
-  final InspectionSubmission submission;
-  const InspectionReviewScreen({super.key, required this.submission});
+  final QrData                  qrData;
+  final String                  inspectionType;
+  final List<ChecklistResponse> responses;
+  final List<DefectReport>      defects;
+  final String                  additionalNotes;
+  final GpsLocation             gpsLocation;
+
+  const InspectionReviewScreen({
+    super.key,
+    required this.qrData,
+    required this.inspectionType,
+    required this.responses,
+    required this.defects,
+    required this.additionalNotes,
+    required this.gpsLocation,
+  });
 
   @override
   State<InspectionReviewScreen> createState() => _InspectionReviewScreenState();
 }
 
 class _InspectionReviewScreenState extends State<InspectionReviewScreen> {
-  void _submit() {
-    context
-        .read<InspectionSubmitBloc>()
-        .add(SubmitRequested(widget.submission));
+  final _repo       = InspectionRepository();
+  bool  _submitting = false;
+
+  /// Build the InspectionSubmission from the screen's inputs.
+  /// vehicleNumber and trailerNumber come from qrData.
+  InspectionSubmission get _submission => InspectionSubmission(
+    qrCodeString:        widget.qrData.qrCodeString,
+    inspectionType:      widget.inspectionType,
+    pendingInspectionId: widget.qrData.pendingInspectionId,
+    templateId:          widget.qrData.templateId,
+    responses:           widget.responses,
+    defects:             widget.defects,
+    additionalNotes:     widget.additionalNotes,
+    gpsLocation:         widget.gpsLocation,
+    startedAt:           DateTime.now(),
+    vehicleNumber:       widget.qrData.vehicleNumber,
+    trailerNumber:       widget.qrData.trailerNumber,
+  );
+
+  Future<void> _submit() async {
+    setState(() => _submitting = true);
+
+    final submission = _submission;
+    final res = await _repo.submitInspection(submission);
+
+    if (!mounted) return;
+    setState(() => _submitting = false);
+
+    if (res.success && res.data != null) {
+      // Navigate to success screen, replacing the entire inspection stack.
+      // Some submit responses only echo back {id, inspection_id, status},
+      // so fill any missing display fields from what we already know.
+      final result = res.data!.fillMissingFrom(submission);
+      context.pushReplacement(AppRoutes.submissionSuccess, extra: result);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(res.error ?? 'Submission failed. Please try again.'),
+          backgroundColor: AppColors.danger,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final s           = widget.submission;
-    final isPreTrip   = s.inspectionType == 'pre_trip';
-    final total       = s.totalItems;
-    final passed      = s.passedItems;
-    final defectCount = s.defectCount;
+    final s         = _submission;
+    final isPreTrip = s.inspectionType == 'pre_trip';
 
-    return BlocConsumer<InspectionSubmitBloc, InspectionSubmitState>(
-      listener: (context, state) {
-        if (state is InspectionSubmitted) {
-          // Navigate to success — replace so driver cannot go back
-          context.go(AppRoutes.submissionSuccess, extra: state.result);
-        }
-        if (state is InspectionSubmitFailure) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(state.message),
-              backgroundColor: AppColors.danger,
-              duration: const Duration(seconds: 4),
-            ),
-          );
-        }
-      },
-      builder: (context, state) {
-        final isSubmitting = state is InspectionSubmitting;
-        final vehicleLabel = s.trailerNumber != null && s.trailerNumber!.isNotEmpty
-            ? '${s.vehicleNumber} / ${s.trailerNumber}'
-            : s.vehicleNumber;
-        return PopScope(
-      canPop: !isSubmitting,
+    // Separate yes_no responses (Vehicle Damage items) from regular checklist items.
+    // "Yes" on a yes_no item means damage EXISTS — handled via defect reports.
+    // "No" on a yes_no item means no damage — counts as passed.
+    final regularResponses = s.responses.where((r) => r.response != 'yes' && r.response != 'no').toList();
+    final yesNoNo          = s.responses.where((r) => r.response == 'no').length;  // "No damage" = passed
+    final yesNoYes         = s.responses.where((r) => r.response == 'yes').length; // "Yes damage" = defect
+
+    // Total = regular items + yes_no items
+    final total        = s.responses.length;
+
+    // Passed = regular items that passed + "No damage" yes_no answers
+    final regularPassed = regularResponses.where((r) =>
+        r.response == 'good' || r.response == 'available' || r.response == 'pass').length;
+    final passed        = regularPassed + yesNoNo;
+
+    // Defects = explicit defect reports filed (from popup dialog)
+    final totalDefects  = s.defects.length;
+    final vehicleLabel = s.trailerNumber != null && s.trailerNumber!.isNotEmpty
+        ? '${s.vehicleNumber} / ${s.trailerNumber}'
+        : s.vehicleNumber;
+
+    return PopScope(
+      canPop: !_submitting,
       child: Scaffold(
         backgroundColor: AppColors.appbg,
         body: Column(
@@ -68,7 +117,7 @@ class _InspectionReviewScreenState extends State<InspectionReviewScreen> {
                   child: Row(
                     children: [
                       GestureDetector(
-                        onTap: isSubmitting ? null : () => context.pop(),
+                        onTap: _submitting ? null : () => context.pop(),
                         child: const Padding(
                           padding: EdgeInsets.only(right: 10),
                           child: Icon(Icons.arrow_back_rounded, color: Colors.white, size: 22),
@@ -121,15 +170,20 @@ class _InspectionReviewScreenState extends State<InspectionReviewScreen> {
                             Expanded(child: _StatBox(value: '$passed', label: AppStrings.statPassed, color: AppColors.green)),
                             const SizedBox(width: 10),
                             Expanded(child: _StatBox(
-                                value: '$defectCount',
+                                // Defect count = checklist failures + explicit defect reports
+                                value: '$totalDefects',
                                 label: AppStrings.statDefects,
-                                color: defectCount > 0 ? AppColors.danger : AppColors.textSecondary)),
+                                color: totalDefects > 0
+                                    ? AppColors.danger
+                                    : AppColors.textSecondary)),
                           ]),
                           const SizedBox(height: 14),
                           Align(
                             alignment: Alignment.centerLeft,
-                            child: Text(AppStrings.itemsPassedCaption(passed, total),
-                                style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                            child: Text(
+                              AppStrings.itemsPassedCaption(passed, total),
+                              style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                            ),
                           ),
                           const SizedBox(height: 6),
                           _ChecklistProgressBar(passed: passed, total: total),
@@ -189,7 +243,7 @@ class _InspectionReviewScreenState extends State<InspectionReviewScreen> {
                     child: SizedBox(
                       height: 52,
                       child: OutlinedButton(
-                        onPressed: isSubmitting ? null : () => context.pop(),
+                        onPressed: _submitting ? null : () => context.pop(),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: AppColors.green,
                           side: const BorderSide(color: AppColors.green, width: 1.5),
@@ -207,13 +261,13 @@ class _InspectionReviewScreenState extends State<InspectionReviewScreen> {
                     child: SizedBox(
                       height: 52,
                       child: ElevatedButton(
-                        onPressed: isSubmitting ? null : _submit,
+                        onPressed: _submitting ? null : _submit,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.green,
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                         ),
-                        child: isSubmitting
+                        child: _submitting
                             ? const Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
@@ -232,8 +286,6 @@ class _InspectionReviewScreenState extends State<InspectionReviewScreen> {
           ],
         ),
       ),
-    );
-      },
     );
   }
 }

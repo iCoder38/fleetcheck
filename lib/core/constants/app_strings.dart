@@ -97,7 +97,7 @@ class AppStrings {
 
   // ── Intro ──────────────────────────────────────────────
   static const List<String> introTitles = [
-    'Welcome to FleetCheck',
+    'Welcome to Y-CheckPro',
     'Inspect Vehicles Anywhere',
     'Stay Ahead of Vehicle Issues',
     'Drive Compliance with Confidence',
@@ -127,7 +127,7 @@ class AppStrings {
   static const String welcomeBackTitle    = 'Welcome Back!';
   static const String pleaseLoginToContinue = 'Please login to continue';
   static const String needHelpPrefix      = 'Need help? ';
-  static String copyright(int year) => '© $year FleetCheck. All rights reserved.';
+  static String copyright(int year) => '© $year Y-CheckPro. All rights reserved.';
 
   // ── Verify OTP ─────────────────────────────────────────
   static const String otpHeaderTitle   = 'Enter Verification Code';
@@ -338,8 +338,7 @@ class AppStrings {
   static const String submittingLabel = 'Submitting...';
 
   // ── Profile ────────────────────────────────────────────
-  static const String editProfileSubtitle =
-      'You can update your phone number and email address.';
+  static const String editProfileSubtitle ='You can update your phone number.';
   static const String labelPhoneNumber = 'Phone Number';
   static const String labelEmailAddress = 'Email Address';
   static const String saveChanges = 'Save Changes';
@@ -391,6 +390,7 @@ class AppStrings {
   static const String notifTypeManagement    = 'Management Message';
   static const String noUnreadNotifications  = 'No unread notifications.';
   static const String noNotificationsYet     = 'No notifications yet.';
+  static const String vechileInformation     = 'Vehicle information';
   static String referenceLabel(String id) => 'Reference: $id';
 
   // ── Help ───────────────────────────────────────────────

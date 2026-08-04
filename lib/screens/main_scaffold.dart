@@ -1,3 +1,4 @@
+import 'package:fleetcheck/core/theme/app_text_styles.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -75,12 +76,13 @@ class _MainScaffoldState extends State<MainScaffold> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
+          backgroundColor:AppColors.appbg,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         title: const Text(AppStrings.confirmLogout,
             textAlign: TextAlign.center,
             style: TextStyle(fontWeight: FontWeight.w800)),
-        content: const Text(AppStrings.confirmLogoutMessage,
-            textAlign: TextAlign.center),
+        content:  Text(AppStrings.confirmLogoutMessage,
+            textAlign: TextAlign.center,style: AppTextStyles.body(context,color: AppColors.primary),),
         actionsAlignment: MainAxisAlignment.center,
         actions: [
           OutlinedButton(

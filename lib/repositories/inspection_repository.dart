@@ -3,6 +3,7 @@ import '../core/network/api_service.dart';
 import '../core/constants/api_constants.dart';
 import '../models/inspection_model.dart';
 import '../models/driver_model.dart';
+import '../models/notification_model.dart';
 
 class InspectionRepository {
   final ApiService _api;
@@ -17,7 +18,7 @@ class InspectionRepository {
 
   Future<ApiResult<InspectionResult>> submitInspection(InspectionSubmission submission) async {
     return _api.call<InspectionResult>(
-      request: () => _api.post(ApiConstants.submitInspection, data: submission.toJson()),
+      request: () => _api.post(ApiConstants.inspectionSubmit, data: submission.toJson()),
       fromJson: (data) => InspectionResult.fromJson(data['inspection'] as Map<String, dynamic>),
     );
   }
@@ -83,7 +84,7 @@ class InspectionRepository {
 
   Future<ApiResult<bool>> markNotificationRead(int id) async {
     return _api.call<bool>(
-      request: () => _api.post(ApiConstants.markNotifRead, data: {'id': id}),
+      request: () => _api.post(ApiConstants.markNotificationRead, data: {'id': id}),
       fromJson: (_) => true,
     );
   }
@@ -103,7 +104,7 @@ class InspectionRepository {
           });
           return _api.postFormData(ApiConstants.updateProfile, formData);
         }
-        return _api.put(ApiConstants.updateProfile, data: {
+        return _api.post(ApiConstants.updateProfile, data: {
           if (phone != null) 'phone': phone,
           if (email != null) 'email': email,
         });
@@ -114,11 +115,41 @@ class InspectionRepository {
 
   Future<ApiResult<bool>> updateFcmToken(String token) async {
     return _api.call<bool>(
-      request: () => _api.post(ApiConstants.updateFcmToken, data: {'fcm_token': token}),
+      request: () => _api.post(ApiConstants.fcmToken, data: {'fcm_token': token}),
       fromJson: (_) => true,
     );
   }
 
   String getReportUrl(int id) =>
-      '${ApiConstants.baseUrl}${ApiConstants.downloadReport(id)}';
+      '${ApiConstants.baseUrl}${ApiConstants.inspectionReport(id)}';
+
+  Future<ApiResult<Map<String, dynamic>>> zoneScan({
+    required String qrCode,
+    required String sessionRef,
+    required String inspectionType,
+  }) async {
+    return _api.call<Map<String, dynamic>>(
+      request: () => _api.post(ApiConstants.qrZoneScan, data: {
+        'qr_code': qrCode,
+        'session_ref': sessionRef,
+        'inspection_type': inspectionType,
+      }),
+      fromJson: (data) => data,
+    );
+  }
+
+  Future<ApiResult<Map<String, dynamic>>> submitZone({
+    required dynamic zoneScanId,
+    required String sessionRef,
+    required List<Map<String, dynamic>> responses,
+  }) async {
+    return _api.call<Map<String, dynamic>>(
+      request: () => _api.post(ApiConstants.zoneSubmit, data: {
+        'zone_scan_id': zoneScanId,
+        'session_ref': sessionRef,
+        'responses': responses,
+      }),
+      fromJson: (data) => data,
+    );
+  }
 }

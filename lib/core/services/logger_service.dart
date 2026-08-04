@@ -2,7 +2,6 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
-import '../constants/api_constants.dart';
 
 /// FleetCheck API Logger
 ///
@@ -152,18 +151,17 @@ ${responseBody != null ? '│ Response Body:\n${_indent(bodyStr)}' : ''}
 
   // ── Private helpers ───────────────────────────────────────────────────────
 
-  String _pad(int n, [int w = 2]) => n.toString().padLeft(w, '0');
-
   String _ts() {
     final now = DateTime.now();
-    return '${now.year}-${_pad(now.month)}-${_pad(now.day)} '
-        '${_pad(now.hour)}:${_pad(now.minute)}:${_pad(now.second)}.${_pad(now.millisecond, 3)}';
+    final pad = (int n, [int w = 2]) => n.toString().padLeft(w, '0');
+    return '${now.year}-${pad(now.month)}-${pad(now.day)} '
+        '${pad(now.hour)}:${pad(now.minute)}:${pad(now.second)}.${pad(now.millisecond, 3)}';
   }
 
   String _sessionBanner() => '''
 ╔═════════════════════════════════════════════════════════════╗
 ║  FleetCheck API Log — Session started ${_ts()}
-║  Base URL: ${ApiConstants.baseUrl}
+║  Base URL: API_BASE_URL_PLACEHOLDER
 ╚═════════════════════════════════════════════════════════════╝
 
 ''';

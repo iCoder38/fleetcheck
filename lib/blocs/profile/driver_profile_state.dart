@@ -13,15 +13,19 @@ class DriverProfileState {
 
   final bool isChangingPassword;
   final String? passwordError;
+  final String? photoUploadError;
   final bool passwordChangeSucceeded;
+  final bool isUploadingPhoto;
 
   const DriverProfileState({
     this.driver,
     this.isUpdatingProfile = false,
     this.updateError,
+    this.photoUploadError,
     this.profileUpdateSucceeded = false,
     this.isChangingPassword = false,
     this.passwordError,
     this.passwordChangeSucceeded = false,
+    this.isUploadingPhoto = false,
   });
 }

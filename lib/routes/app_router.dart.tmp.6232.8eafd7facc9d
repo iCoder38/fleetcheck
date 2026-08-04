@@ -45,6 +45,7 @@ class AppRoutes {
   static const String createPassword = '/create-password';
   static const String dashboard = '/dashboard';
   static const String qrScanner = '/qr-scanner';
+  static const String zoneWalkAround = '/zone-walkaround';
   static const String inspectionType = '/inspection-type';
   static const String truckInfo = '/truck-info';
   static const String checklist = '/checklist';
@@ -154,6 +155,16 @@ final GoRouter appRouter = GoRouter(
         GoRoute(
           path: AppRoutes.help,
           builder: (_, __) => const HelpSupportScreen(),
+        ),
+        GoRoute(
+          path: AppRoutes.zoneWalkAround,
+          builder: (context, state) {
+            final extra = state.extra as Map<String, dynamic>;
+            return ZoneWalkAroundScreen(
+              qrCode: extra['qr_code'] as String,
+              qrData: extra['qr_data'] as Map<String, dynamic>,
+            );
+          },
         ),
       ],
     ),

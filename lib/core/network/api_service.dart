@@ -30,9 +30,12 @@ class ApiService {
   void init() {
     _dio = Dio(BaseOptions(
       baseUrl: ApiConstants.baseUrl,
-      connectTimeout: Duration(seconds: AppConstants.apiTimeoutSeconds),
-      receiveTimeout: Duration(seconds: AppConstants.apiTimeoutSeconds),
-      headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+      connectTimeout: const Duration(seconds: AppConstants.apiTimeoutSeconds),
+      receiveTimeout: const Duration(seconds: AppConstants.apiTimeoutSeconds),
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
     ));
 
     // Auth Interceptor
@@ -46,7 +49,8 @@ class ApiService {
       },
       onError: (error, handler) async {
         final path = error.requestOptions.path;
-        final alreadyRetried = error.requestOptions.extra['_retriedAfterRelogin'] == true;
+        final alreadyRetried =
+            error.requestOptions.extra['_retriedAfterRelogin'] == true;
 
         if (error.response?.statusCode == 401 &&
             !SessionManager.isPublicPath(path) &&
@@ -64,7 +68,8 @@ class ApiService {
               // Retry itself failed — fall through to the hard logout below.
             }
           }
-          await _logger.logInfo('Session expired — redirecting to login ($path)');
+          await _logger
+              .logInfo('Session expired — redirecting to login ($path)');
           await SessionManager.handleSessionExpired();
         }
         return handler.next(error);
@@ -90,7 +95,8 @@ class ApiService {
         final duration = DateTime.now().millisecondsSinceEpoch - start;
         await _logger.logResponse(
           statusCode: response.statusCode ?? 0,
-          url: '${response.requestOptions.baseUrl}${response.requestOptions.path}',
+          url:
+              '${response.requestOptions.baseUrl}${response.requestOptions.path}',
           durationMs: duration,
           body: response.data,
           headers: response.headers.map,
@@ -105,7 +111,6 @@ class ApiService {
           url: '${error.requestOptions.baseUrl}${error.requestOptions.path}',
           error: '${error.type.name}: ${error.message}  (${duration}ms)',
           statusCode: error.response?.statusCode,
-
           responseBody: error.response?.data,
         );
         return handler.next(error);
@@ -192,7 +197,8 @@ class ApiService {
     } on DioException catch (e) {
       if (e.type == DioExceptionType.connectionTimeout ||
           e.type == DioExceptionType.receiveTimeout) {
-        return ApiResult.error('Connection timed out. Please check your internet.');
+        return ApiResult.error(
+            'Connection timed out. Please check your internet.');
       }
       if (e.type == DioExceptionType.connectionError) {
         return ApiResult.error('No internet connection.');
@@ -215,8 +221,7 @@ class ApiResult<T> {
 
   const ApiResult._({this.data, this.error, required this.success});
 
-  factory ApiResult.success(T data) =>
-      ApiResult._(data: data, success: true);
+  factory ApiResult.success(T data) => ApiResult._(data: data, success: true);
 
   factory ApiResult.error(String message) =>
       ApiResult._(error: message, success: false);

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../models/driver_model.dart';
 import '../../repositories/auth_repository.dart';
@@ -15,6 +17,7 @@ class DriverProfileBloc extends Bloc<DriverProfileEvent, DriverProfileState> {
     on<ProfileLoadRequested>(_onLoadRequested);
     on<ProfileUpdateRequested>(_onUpdateRequested);
     on<PasswordChangeRequested>(_onPasswordChangeRequested);
+    on<ProfilePhotoUpdateRequested>(_onUpdateProfileImageRequested);
   }
 
   void _onLoadRequested(
@@ -38,6 +41,31 @@ class DriverProfileBloc extends Bloc<DriverProfileEvent, DriverProfileState> {
     final result = await _inspRepo.updateProfile(
       phone: event.phone,
       email: event.email,
+    );
+    if (result.success && result.data != null) {
+      emit(DriverProfileState(
+        driver: result.data,
+        profileUpdateSucceeded: true,
+        isChangingPassword: state.isChangingPassword,
+      ));
+    } else {
+      emit(DriverProfileState(
+        driver: state.driver,
+        updateError: result.error ?? 'Update failed.',
+        isChangingPassword: state.isChangingPassword,
+      ));
+    }
+  }
+
+  Future<void> _onUpdateProfileImageRequested(
+      ProfilePhotoUpdateRequested event, Emitter<DriverProfileState> emit) async {
+    emit(DriverProfileState(
+      driver: state.driver,
+      isUpdatingProfile: true,
+      isChangingPassword: state.isChangingPassword,
+    ));
+    final result = await _inspRepo.updateProfile(
+      photoPath: event.photoFile?.path,
     );
     if (result.success && result.data != null) {
       emit(DriverProfileState(

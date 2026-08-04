@@ -21,7 +21,6 @@ class AppColors {
   static const Color green         = Color(0xFF1A7A47); // = success
   // Used for "active" highlights (e.g. QR scan overlay/spinner) — the
   // spec assigns "Active" to Amber, not green, so this now aliases Amber Light.
-  static const Color greenLight    = Color(0xFFF5B942); // = accent / amberLight
   static const Color greenPale     = Color(0xFFD5F0E3); // badge-pass background
   static const Color navy          = Color(0xFF1A2A4A); // = primary
   static const Color red           = Color(0xFFC0392B); // = danger

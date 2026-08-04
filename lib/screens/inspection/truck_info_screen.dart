@@ -60,7 +60,7 @@ class TruckInfoScreen extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(AppStrings.truckInformation,
+                              const Text(AppStrings.vechileInformation,
                                   style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white)),
                               const SizedBox(height: 4),
                               Text(AppStrings.qrCodeVerified,
@@ -115,7 +115,7 @@ class TruckInfoScreen extends StatelessWidget {
                     icon: Icons.local_shipping_rounded,
                     title: AppStrings.vehicleDetails,
                     rows: [
-                      _InfoRow(AppStrings.labelTruckNumber,    qrData.vehicleNumber),
+                      _InfoRow(AppStrings.labelVehicleNumber,    qrData.vehicleNumber),
                       _InfoRow(AppStrings.labelVinNumber,      qrData.vin ?? '—'),
                       _InfoRow(AppStrings.labelTrailerNumber,  qrData.trailerNumber ?? '—'),
                       _InfoRow(AppStrings.labelLicensePlate,   qrData.plateNumber ?? '—'),

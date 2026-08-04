@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import '../../blocs/auth/login/login_bloc.dart';
+import '../../core/constants/app_assets.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
 import '../../routes/app_router.dart';
@@ -201,46 +202,46 @@ class _LoginScreenState extends State<LoginScreen> {
                         SizedBox(height: AppResponsive.spacing(context, 14)),
 
                         // Contact Support
-                        Container(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(_pillRadius),
-                            boxShadow: _pillShadow,
-                          ),
-                          child: SizedBox(
-                            width: double.infinity,
-                            height: AppResponsive.scale(context, 52),
-                            child: OutlinedButton.icon(
-                              onPressed: () => context.push(AppRoutes.help),
-                              style: OutlinedButton.styleFrom(
-                                backgroundColor: Colors.white,
-                                side: const BorderSide(color: AppColors.border),
-                                shape: RoundedRectangleBorder(
-                                    borderRadius:
-                                        BorderRadius.circular(_pillRadius)),
-                              ),
-                              icon: Icon(Icons.chat_bubble_outline_rounded,
-                                  size: AppResponsive.scale(context, 18),
-                                  color: AppColors.textPrimary),
-                              label: RichText(
-                                text: TextSpan(
-                                  style: AppTextStyles.label(context,
-                                      color: AppColors.textSecondary),
-                                  children: [
-                                    const TextSpan(
-                                        text: AppStrings.needHelpPrefix),
-                                    TextSpan(
-                                        text: AppStrings.contactSupport,
-                                        style: AppTextStyles.label(context,
-                                                color: AppColors.green)
-                                            .copyWith(
-                                                fontWeight: FontWeight.w700)),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        SizedBox(height: AppResponsive.spacing(context, 20)),
+                        // Container(
+                        //   decoration: BoxDecoration(
+                        //     borderRadius: BorderRadius.circular(_pillRadius),
+                        //     boxShadow: _pillShadow,
+                        //   ),
+                        //   child: SizedBox(
+                        //     width: double.infinity,
+                        //     height: AppResponsive.scale(context, 52),
+                        //     child: OutlinedButton.icon(
+                        //       onPressed: () => context.push(AppRoutes.help),
+                        //       style: OutlinedButton.styleFrom(
+                        //         backgroundColor: Colors.white,
+                        //         side: const BorderSide(color: AppColors.border),
+                        //         shape: RoundedRectangleBorder(
+                        //             borderRadius:
+                        //                 BorderRadius.circular(_pillRadius)),
+                        //       ),
+                        //       icon: Icon(Icons.chat_bubble_outline_rounded,
+                        //           size: AppResponsive.scale(context, 18),
+                        //           color: AppColors.textPrimary),
+                        //       label: RichText(
+                        //         text: TextSpan(
+                        //           style: AppTextStyles.label(context,
+                        //               color: AppColors.textSecondary),
+                        //           children: [
+                        //             const TextSpan(
+                        //                 text: AppStrings.needHelpPrefix),
+                        //             TextSpan(
+                        //                 text: AppStrings.contactSupport,
+                        //                 style: AppTextStyles.label(context,
+                        //                         color: AppColors.green)
+                        //                     .copyWith(
+                        //                         fontWeight: FontWeight.w700)),
+                        //           ],
+                        //         ),
+                        //       ),
+                        //     ),
+                        //   ),
+                        // ),
+                        // SizedBox(height: AppResponsive.spacing(context, 20)),
                         Center(
                           child: Text(
                             AppStrings.copyright(DateTime.now().year),
@@ -281,44 +282,8 @@ class _Header extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SizedBox(height: AppResponsive.spacing(context, 24)),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    const _LogoMark(),
-                    SizedBox(width: AppResponsive.spacing(context, 14)),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          RichText(
-                            text: TextSpan(
-                              children: [
-                                TextSpan(
-                                  text: 'Fleet',
-                                  style: AppTextStyles.heading1(context,
-                                          color: Colors.white)
-                                      .copyWith(fontStyle: FontStyle.italic),
-                                ),
-                                TextSpan(
-                                  text: 'Check',
-                                  style: AppTextStyles.heading1(context,
-                                          color: _brightGreen)
-                                      .copyWith(fontStyle: FontStyle.italic),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Text(
-                            AppStrings.tagline,
-                            style: AppTextStyles.bodySmall(context,
-                                color: Colors.white.withValues(alpha: 0.6)),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+                SizedBox(height: AppResponsive.spacing(context, 20)),
+                Image.asset(AppAssets.appLogoWhite,scale: 5,),
                 SizedBox(height: AppResponsive.spacing(context, 20)),
                 Text(AppStrings.welcomeBackTitle,
                     style:
@@ -335,55 +300,6 @@ class _Header extends StatelessWidget {
 }
 
 // ─── Logo mark: QR-in-frame icon with a check badge ─────────────────────────
-class _LogoMark extends StatelessWidget {
-  const _LogoMark();
-
-  @override
-  Widget build(BuildContext context) {
-    final size = AppResponsive.scale(context, 56);
-    return SizedBox(
-      width: size,
-      height: size + AppResponsive.scale(context, 8),
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Container(
-            width: size,
-            height: size,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: _brightGreen, width: 2),
-            ),
-            child: Icon(Icons.qr_code_2_rounded,
-                color: AppColors.primary, size: size * 0.62),
-          ),
-          Positioned(
-            bottom: -6,
-            right: -6,
-            child: Container(
-              padding: const EdgeInsets.all(3),
-              decoration: const BoxDecoration(
-                color: AppColors.primary,
-                shape: BoxShape.circle,
-              ),
-              child: Container(
-                width: AppResponsive.scale(context, 20),
-                height: AppResponsive.scale(context, 20),
-                decoration: const BoxDecoration(
-                  color: AppColors.green,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.check_rounded,
-                    color: Colors.white, size: 14),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 // ─── Gentle wave clip for the header's bottom edge ──────────────────────────
 class _WaveClipper extends CustomClipper<Path> {
@@ -406,6 +322,7 @@ class _WaveClipper extends CustomClipper<Path> {
 // ─── Uppercase caption label above a field ──────────────────────────────────
 class _UpperLabel extends StatelessWidget {
   final String label;
+
   const _UpperLabel(this.label);
 
   @override

@@ -86,7 +86,7 @@ class _DefectReportScreenState extends State<DefectReportScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text(AppStrings.addNewLabel),
-        content: TextField(controller: ctrl, autofocus: true, decoration: const InputDecoration(hintText: AppStrings.categoryLabel)),
+        content: TextField(controller: ctrl, autofocus: true, style: const TextStyle(color: AppColors.primary), decoration: const InputDecoration(hintText: AppStrings.categoryLabel)),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text(AppStrings.cancel)),
           TextButton(onPressed: () => Navigator.pop(ctx, ctrl.text), child: const Text(AppStrings.saveDefect)),
@@ -236,6 +236,7 @@ class _DefectReportScreenState extends State<DefectReportScreen> {
                     maxLines: 4,
                     maxLength: 1000,
                     onChanged: (_) => setState(() {}),
+                    style: const TextStyle(color: AppColors.primary),
                     decoration: InputDecoration(
                       hintText: AppStrings.describeDamageHint,
                       filled: true,

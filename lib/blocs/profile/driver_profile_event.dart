@@ -9,6 +9,10 @@ final class ProfileUpdateRequested extends DriverProfileEvent {
   final String? email;
   ProfileUpdateRequested({this.phone, this.email});
 }
+final class ProfilePhotoUpdateRequested extends DriverProfileEvent {
+  final File? photoFile;
+  ProfilePhotoUpdateRequested({this.photoFile});
+}
 
 final class PasswordChangeRequested extends DriverProfileEvent {
   final String currentPassword;

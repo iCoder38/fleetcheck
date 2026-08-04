@@ -1,5 +1,5 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../models/inspection_model.dart';
+import '../../models/notification_model.dart';
 import '../../repositories/inspection_repository.dart';
 
 part 'notifications_event.dart';

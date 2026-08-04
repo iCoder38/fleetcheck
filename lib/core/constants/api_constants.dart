@@ -1,10 +1,8 @@
 class ApiConstants {
   ApiConstants._();
 
-  static const String _base =
+  static const String baseUrl =
       'https://demo1.evirtualservices.com/fleetcheckapp/api';
-
-  static String get baseUrl => _base;
 
   // Auth
   static const String login = '/auth/login';
@@ -19,19 +17,24 @@ class ApiConstants {
   static const String driverProfile = '/driver/profile';
   static const String updateProfile = '/driver/update-profile';
   static const String driverStats = '/driver/stats';
-  static const String uploadPhoto = '/driver/upload-photo';
 
   // QR
-  static const String scanQr = '/qr/scan';
+  static const String qrScan = '/qr/scan';
+  static const String scanQr = '/qr/scan'; // alias for inspection_repository
+  static const String qrZoneScan = '/qr/zone-scan'; // Zone QR scan
 
   // Inspection
-  static const String submitInspection = '/inspection/submit';
+  static const String inspectionSubmit = '/inspection/submit';
   static const String inspectionList = '/inspection/list';
+  static const String inspectionTemplates = '/inspection/templates';
+  static const String inspectionChecklist = '/inspection/checklist';
+  static const String zoneSubmit = '/inspection/zone-submit'; // Zone submit
+  static const String zoneStatus = '/inspection/zone-status'; // Zone progress
   static String inspectionDetail(int id) => '/inspection/detail/$id';
-  static String downloadReport(int id) => '/inspection/report/$id';
+  static String inspectionReport(int id) => '/inspection/report/$id';
 
   // Notifications
   static const String notifications = '/notifications';
-  static const String markNotifRead = '/notifications/mark-read';
-  static const String updateFcmToken = '/notifications/fcm-token';
+  static const String markNotificationRead = '/notifications/mark-read';
+  static const String fcmToken = '/notifications/fcm-token';
 }

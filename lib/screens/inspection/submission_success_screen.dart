@@ -1,12 +1,26 @@
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:printing/printing.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
+import '../../core/services/pdf_report_service.dart';
+import '../../core/services/storage_service.dart';
 import '../../models/inspection_model.dart';
 import '../../repositories/inspection_repository.dart';
 import '../../routes/app_router.dart';
+
+/// Thrown when the full inspection detail can't be fetched from the API —
+/// carries the server/network error message so it can be shown as-is
+/// instead of a generic "PDF failed" string.
+class _ReportDataException implements Exception {
+  final String message;
+  _ReportDataException(this.message);
+}
 
 class SubmissionSuccessScreen extends StatefulWidget {
   final InspectionResult result;
@@ -24,6 +38,8 @@ class _SubmissionSuccessScreenState extends State<SubmissionSuccessScreen>
 
   bool _isDownloading = false;
   bool _isSharing     = false;
+
+  Uint8List? _cachedPdfBytes;
 
   @override
   void initState() {
@@ -43,23 +59,70 @@ class _SubmissionSuccessScreenState extends State<SubmissionSuccessScreen>
     super.dispose();
   }
 
+  String get _reportFileName {
+    final safeId = widget.result.inspectionId.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+    return 'FleetCheck_$safeId.pdf';
+  }
+
+  /// Fetches the full inspection detail (checklist responses, defects,
+  /// driver/vehicle info) and renders the PDF, caching the bytes so a
+  /// second tap (e.g. Download then Share) doesn't re-fetch from the API.
+  Future<Uint8List> _buildPdfBytes() async {
+    final cached = _cachedPdfBytes;
+    if (cached != null) return cached;
+
+    final repo = context.read<InspectionRepository>();
+    final detailResult = await repo.getInspectionDetail(widget.result.id);
+    final detail = detailResult.data;
+    if (!detailResult.success || detail == null) {
+      throw _ReportDataException(detailResult.error ?? AppStrings.pdfFailed);
+    }
+
+    final driverData = StorageService().getDriverData();
+    final bytes = await PdfReportService()
+        .generateInspectionReport(detail, driverData: driverData);
+    _cachedPdfBytes = bytes;
+    return bytes;
+  }
+
+  Future<Directory> _reportsDirectory() async {
+    // App-scoped storage on both platforms — no runtime storage permission
+    // needed on Android (app-specific external dir) or iOS (Documents dir).
+    final base = Platform.isAndroid
+        ? (await getExternalStorageDirectory()) ?? await getApplicationDocumentsDirectory()
+        : await getApplicationDocumentsDirectory();
+    final dir = Directory('${base.path}/YCheckPro Reports');
+    if (!await dir.exists()) await dir.create(recursive: true);
+    return dir;
+  }
+
   Future<void> _downloadPdf() async {
     setState(() => _isDownloading = true);
     try {
-      // In production: call API to get PDF bytes, then save using path_provider + open_file
-      await Future.delayed(const Duration(seconds: 2)); // simulate
+      final bytes = await _buildPdfBytes();
+      final dir = await _reportsDirectory();
+      final file = File('${dir.path}/$_reportFileName');
+      await file.writeAsBytes(bytes, flush: true);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(AppStrings.reportDownloadedSuccess),
+        SnackBar(
+          content: const Text(AppStrings.reportDownloadedSuccess),
           backgroundColor: AppColors.secondary,
+          action: SnackBarAction(
+            label: 'OPEN',
+            textColor: Colors.white,
+            onPressed: () => Printing.layoutPdf(
+              onLayout: (_) async => bytes,
+              name: _reportFileName,
+            ),
+          ),
         ),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(AppStrings.pdfFailed),
+        SnackBar(
+          content: Text(e is _ReportDataException ? e.message : AppStrings.pdfFailed),
           backgroundColor: AppColors.danger,
         ),
       );
@@ -71,25 +134,17 @@ class _SubmissionSuccessScreenState extends State<SubmissionSuccessScreen>
   Future<void> _shareReport() async {
     setState(() => _isSharing = true);
     try {
-      final r = widget.result;
-      final text = '''
-FleetCheck Inspection Report
-
-Inspection ID:    ${r.inspectionId}
-Vehicle:          ${r.vehicleNumber}
-Type:             ${r.inspectionType == 'pre_trip' ? 'Pre-Trip' : 'Post-Trip'} Inspection
-Date & Time:      ${DateFormat('MM/dd/yyyy hh:mm a').format(r.displayDate)}
-GPS Location:     ${r.gpsLocation?.address ?? '—'}
-Status:           ${r.status.toUpperCase()}
-
-Generated by FleetCheck — Inspect. Verify. Drive with Confidence.
-      ''';
-      await Share.share(text, subject: 'FleetCheck Inspection Report – ${r.inspectionId}');
+      final bytes = await _buildPdfBytes();
+      await Printing.sharePdf(
+        bytes: bytes,
+        filename: _reportFileName,
+        subject: 'Y-CheckPro Inspection Report – ${widget.result.inspectionId}',
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(AppStrings.shareFailed),
+        SnackBar(
+          content: Text(e is _ReportDataException ? e.message : AppStrings.shareFailed),
           backgroundColor: AppColors.danger,
         ),
       );
@@ -175,12 +230,7 @@ Generated by FleetCheck — Inspect. Verify. Drive with Confidence.
                         icon: Icons.confirmation_number_outlined,
                         label: AppStrings.labelInspectionId,
                         value: r.inspectionId,
-                        valueStyle: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 16,
-                          color: AppColors.primary,
-                          letterSpacing: 0.5,
-                        ),
+                        multiLine: true,
                       ),
                       const Divider(height: 20),
                       _DetailItem(
@@ -340,7 +390,7 @@ class _DetailItem extends StatelessWidget {
                   Text(label, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                   Flexible(
                     child: Text(value, textAlign: TextAlign.right,
-                        style: valueStyle ?? TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: valueColor ?? AppColors.textPrimary)),
+                        style: valueStyle ?? TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: valueColor ?? AppColors.primary)),
                   ),
                 ]),
         ),

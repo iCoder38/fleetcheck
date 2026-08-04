@@ -5,7 +5,7 @@ import '../../blocs/notifications/notifications_bloc.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/theme/app_responsive.dart';
-import '../../models/inspection_model.dart';
+import '../../models/notification_model.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -35,6 +35,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     _markRead(n);
     showModalBottomSheet(
       context: context,
+      backgroundColor: AppColors.appbg,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => Padding(
@@ -50,7 +51,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               const SizedBox(width: 12),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(n.title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: AppColors.primary)),
-                Text(_typeLabel(n.type), style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                Text(_typeLabel(n.type), style: const TextStyle(fontSize: 12, color: AppColors.border)),
               ])),
             ]),
             const SizedBox(height: 16),
@@ -58,11 +59,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             const SizedBox(height: 12),
             Text(
               DateFormat('MM/dd/yyyy hh:mm a').format(n.createdAt),
-              style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              style: const TextStyle(fontSize: 12, color: AppColors.border),
             ),
             if (n.referenceId != null) ...[
               const SizedBox(height: 4),
-              Text(AppStrings.referenceLabel(n.referenceId!), style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+              Text(AppStrings.referenceLabel(n.referenceId!), style: const TextStyle(fontSize: 12, color: AppColors.border)),
             ],
           ],
         ),

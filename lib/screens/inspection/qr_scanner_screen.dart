@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/constants/app_strings.dart';
 import '../../repositories/inspection_repository.dart';
 import '../../routes/app_router.dart';
 
@@ -79,22 +80,24 @@ class _QrScannerScreenState extends State<QrScannerScreen>
     setState(() => _state = _ScanState.validating);
     await _controller.stop();
 
+    // ── Detect Zone QR before calling any API ─────────────────
+    // Zone QRs always start with ZQR- and must go to zone flow
+    if (raw.startsWith('ZQR-')) {
+      await context.push(AppRoutes.zoneWalkAround, extra: {
+        'qr_code': raw,
+        'qr_data': <String, dynamic>{},
+      });
+      if (mounted) _reset();
+      return;
+    }
+
+    // Regular vehicle QR — existing flow
     final res = await _repo.scanQr(raw);
 
     if (!mounted) return;
 
     if (res.success && res.data != null) {
-      // ── Validation passed — navigate to Inspection Type Screen ─────────
-      // AWAIT the push: it only completes once the pushed route (and
-      // anything pushed on top of it) is popped back to this screen. The
-      // camera stays stopped for the whole inspection flow instead of
-      // restarting in the background — restarting it on a fixed timer
-      // (the previous approach) reactivated the camera while this screen
-      // was still underneath the Inspection Type screen, so if the QR
-      // code was still in frame it would get scanned again, firing a
-      // second API call and pushing a duplicate screen on top.
       await context.push(AppRoutes.inspectionType, extra: res.data!);
-      // Reset state only when we're actually back on the scanner screen.
       if (mounted) _reset();
     } else {
       // ── Validation failed — show error overlay ─────────────────────────

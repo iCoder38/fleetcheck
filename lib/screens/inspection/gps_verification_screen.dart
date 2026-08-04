@@ -1,193 +1,233 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
-import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
+import '../../core/theme/app_responsive.dart';
 import '../../models/inspection_model.dart';
 import '../../routes/app_router.dart';
 
 class GpsVerificationScreen extends StatefulWidget {
-  final InspectionSubmission submission;
+  final QrData qrData;
+  final String inspectionType;
+  final List<ChecklistResponse> responses;
+  final List<DefectReport> defects;
+  final String? additionalNotes;
 
-  const GpsVerificationScreen({super.key, required this.submission});
+  const GpsVerificationScreen({
+    super.key,
+    required this.qrData,
+    required this.inspectionType,
+    required this.responses,
+    required this.defects,
+    this.additionalNotes,
+  });
 
   @override
   State<GpsVerificationScreen> createState() => _GpsVerificationScreenState();
 }
 
 class _GpsVerificationScreenState extends State<GpsVerificationScreen> {
-  bool _isCapturing = true;
-  String? _error;
-  String _errorTitle = AppStrings.gpsError;
-  String _statusText = AppStrings.requestingLocationPermission;
-  double? _lat;
-  double? _lng;
-  double? _accuracy;
-  String _address = '';
-  DateTime _capturedAt = DateTime.now();
+  _GpsState _state      = _GpsState.loading;
+  String    _statusText = 'Checking location services…';
+  String    _errorTitle = 'GPS Error';
+  String    _errorDetail = '';
+
+  Position? _position;
+  String    _address     = '';
+  DateTime  _capturedAt  = DateTime.now();
 
   @override
   void initState() {
     super.initState();
-    _captureLocation();
+    // Small delay so the loading UI renders before async work starts
+    Future.delayed(const Duration(milliseconds: 300), _captureLocation);
   }
 
   Future<void> _captureLocation() async {
+    if (!mounted) return;
     setState(() {
-      _isCapturing = true;
-      _error = null;
-      _statusText = AppStrings.requestingLocationPermission;
+      _state       = _GpsState.loading;
+      _statusText  = 'Checking location services…';
+      _errorDetail = '';
+      _position    = null;
+      _address     = '';
     });
 
     try {
-      // Check if location service is enabled
-      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      // ── Step 1: Location service enabled? ────────────────────────────
+      bool serviceEnabled;
+      try {
+        serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      } catch (e) {
+        serviceEnabled = false;
+      }
+
       if (!serviceEnabled) {
-        _fail(AppStrings.gpsServicesOffTitle, AppStrings.gpsDisabled,
-            openLocationSettings: true);
+        _fail('Location Services Off',
+            'GPS is turned off on this device.\n\n'
+            'Go to: Settings → Location → Turn On GPS\n\n'
+            'Then tap Try Again.',
+            openSettings: true);
         return;
       }
 
-      // Check/request permissions
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) {
-          _fail(AppStrings.permissionDeniedTitle, AppStrings.locationPermissionDenied);
+      // ── Step 2: Runtime permission ────────────────────────────────────
+      if (!mounted) return;
+      setState(() => _statusText = 'Requesting location permission…');
+
+      LocationPermission perm;
+      try {
+        perm = await Geolocator.checkPermission();
+      } catch (e) {
+        _fail('Permission Check Failed',
+            'Could not check location permission.\n'
+            'Error: ${e.toString()}\n\n'
+            'Please restart the app and try again.');
+        return;
+      }
+
+      if (perm == LocationPermission.denied) {
+        try {
+          perm = await Geolocator.requestPermission();
+        } catch (e) {
+          _fail('Permission Request Failed',
+              'Could not request location permission.\n'
+              'Error: ${e.toString()}\n\n'
+              'Go to: Settings → Apps → Y-CheckPro → Permissions → Location → Allow');
           return;
         }
       }
-      if (permission == LocationPermission.deniedForever) {
-        _fail(AppStrings.permissionDeniedForeverTitle,
-            AppStrings.locationPermissionPermanentlyDenied,
-            openAppSettings: true);
+
+      if (perm == LocationPermission.denied) {
+        _fail('Permission Denied',
+            'Location permission was denied.\n\n'
+            'Tap "Try Again" and select "Allow" when prompted.');
         return;
       }
 
-      // Get position — tiered fallback so a slow/blocked GPS fix (common
-      // indoors) doesn't dead-end the driver. LocationAccuracy.high forces
-      // GPS-only and can fail entirely indoors; medium/low use network
-      // positioning too, and lastKnownPosition is a last resort so the
-      // driver isn't stuck if no fresh fix is available at all.
-      setState(() => _statusText = AppStrings.gettingYourLocation);
+      if (perm == LocationPermission.deniedForever) {
+        _fail('Permission Permanently Denied',
+            'Location permission is permanently blocked.\n\n'
+            'Go to:\nSettings → Apps → Y-CheckPro → Permissions → Location → Allow\n\n'
+            'Then return to the app.',
+            openSettings: true);
+        return;
+      }
+
+      // ── Step 3: Get position — 3 accuracy levels with fallback ────────
+      if (!mounted) return;
+      setState(() => _statusText = 'Getting your GPS location…');
 
       Position? position;
+      String method = 'unknown';
+
+      // Try 1: Medium accuracy — uses Network + GPS (works indoors, fast)
       try {
+        setState(() => _statusText = 'Locating via GPS + Network…');
         position = await Geolocator.getCurrentPosition(
           desiredAccuracy: LocationAccuracy.medium,
-          timeLimit: const Duration(seconds: 30),
+          timeLimit: const Duration(seconds: 25),
         );
-      } catch (_) {
-        setState(() => _statusText = AppStrings.tryingBackupLocationMethod);
+        method = 'medium accuracy';
+      } catch (e1) {
+        debugPrint('[GPS] Medium accuracy failed: $e1');
+
+        // Try 2: Low accuracy — cell towers only (always available)
         try {
+          setState(() => _statusText = 'Trying network-only location…');
           position = await Geolocator.getCurrentPosition(
-            desiredAccuracy: LocationAccuracy.low,
-            timeLimit: const Duration(seconds: 20),
+            desiredAccuracy: LocationAccuracy.lowest,
+            timeLimit: const Duration(seconds: 15),
           );
-        } catch (_) {
-          setState(() => _statusText = AppStrings.usingLastKnownLocation);
-          position = await Geolocator.getLastKnownPosition();
+          method = 'low accuracy (network)';
+        } catch (e2) {
+          debugPrint('[GPS] Low accuracy failed: $e2');
+
+          // Try 3: Last known position — no timeout, immediate
+          try {
+            setState(() => _statusText = 'Using last known location…');
+            position = await Geolocator.getLastKnownPosition();
+            if (position != null) method = 'last known position';
+          } catch (e3) {
+            debugPrint('[GPS] Last known failed: $e3');
+          }
         }
       }
 
+      if (!mounted) return;
+
       if (position == null) {
-        _fail(AppStrings.locationNotAvailableTitle, AppStrings.couldNotDetermineLocation);
+        _fail('Location Not Available',
+            'Unable to determine your location after multiple attempts.\n\n'
+            'Please:\n'
+            '• Move outdoors or near a window\n'
+            '• Make sure GPS is enabled\n'
+            '• Check that location permission is set to "Allow"\n\n'
+            'You can also tap "Skip GPS" to continue without location.');
         return;
       }
 
-      // Reverse geocode
-      setState(() => _statusText = AppStrings.fetchingAddress);
-      String address = AppStrings.locationCapturedFallback;
+      // ── Step 4: Reverse geocode ───────────────────────────────────────
+      if (!mounted) return;
+      setState(() => _statusText = 'Getting address…');
+
+      // Coordinate string as safe fallback
+      String address =
+          '${position.latitude.toStringAsFixed(5)}° N, '
+          '${position.longitude.toStringAsFixed(5)}° E';
+
       try {
-        final placemarks = await placemarkFromCoordinates(
+        final marks = await placemarkFromCoordinates(
           position.latitude,
           position.longitude,
-        ).timeout(const Duration(seconds: 10));
-        if (placemarks.isNotEmpty) {
-          final p = placemarks.first;
+        ).timeout(const Duration(seconds: 8));
+
+        if (marks.isNotEmpty) {
+          final p = marks.first;
           final parts = [
-            p.street,
-            p.subLocality,
-            p.locality,
-            p.administrativeArea,
-            p.country,
+            p.street, p.subLocality, p.locality,
+            p.administrativeArea, p.country,
           ].where((s) => s != null && s.isNotEmpty).toList();
           if (parts.isNotEmpty) address = parts.join(', ');
         }
       } catch (_) {
-        address = '${position.latitude.toStringAsFixed(5)}, ${position.longitude.toStringAsFixed(5)}';
+        // Geocoding failed — use coordinates, non-fatal
       }
 
       if (!mounted) return;
       setState(() {
-        _lat         = position!.latitude;
-        _lng         = position.longitude;
-        _accuracy    = position.accuracy;
+        _state       = _GpsState.success;
+        _position    = position;
         _address     = address;
         _capturedAt  = DateTime.now();
-        _isCapturing = false;
+        _statusText  = 'Location captured ($method)';
       });
+
     } catch (e) {
-      _fail(AppStrings.gpsError, AppStrings.locationCaptureFailed);
+      if (!mounted) return;
+      _fail('GPS Error',
+          'An unexpected error occurred:\n${e.toString()}\n\n'
+          'Please try again or use Skip GPS.');
     }
   }
 
-  /// Sets the error card's title/detail and stops the loading state. When
-  /// [openLocationSettings] or [openAppSettings] is set, nudges the driver
-  /// straight to the relevant OS settings screen after a short delay so
-  /// they don't have to hunt for it themselves.
-  void _fail(String title, String detail,
-      {bool openLocationSettings = false, bool openAppSettings = false}) {
+  void _fail(String title, String detail, {bool openSettings = false}) {
     if (!mounted) return;
     setState(() {
-      _isCapturing = false;
-      _errorTitle = title;
-      _error = detail;
+      _state       = _GpsState.error;
+      _errorTitle  = title;
+      _errorDetail = detail;
     });
-    if (openLocationSettings) {
-      Future.delayed(const Duration(milliseconds: 800), Geolocator.openLocationSettings);
-    } else if (openAppSettings) {
-      Future.delayed(const Duration(milliseconds: 800), Geolocator.openAppSettings);
+    if (openSettings) {
+      Future.delayed(const Duration(milliseconds: 800),
+          Geolocator.openLocationSettings);
     }
   }
 
-  InspectionSubmission _submissionWithGps(GpsLocation gps) => InspectionSubmission(
-    qrCodeString:    widget.submission.qrCodeString,
-    vehicleNumber:   widget.submission.vehicleNumber,
-    trailerNumber:   widget.submission.trailerNumber,
-    inspectionType:  widget.submission.inspectionType,
-    responses:       widget.submission.responses,
-    defects:         widget.submission.defects,
-    additionalNotes: widget.submission.additionalNotes,
-    gpsLocation:     gps,
-    startedAt:       widget.submission.startedAt,
-  );
-
-  void _confirmAndContinue() {
-    if (_lat == null || _lng == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(AppStrings.gpsRequired),
-          backgroundColor: AppColors.danger,
-        ),
-      );
-      return;
-    }
-
-    final gps = GpsLocation(
-      latitude:   _lat!,
-      longitude:  _lng!,
-      address:    _address,
-      capturedAt: _capturedAt,
-    );
-
-    context.push(AppRoutes.inspectionReview, extra: {'submission': _submissionWithGps(gps)});
-  }
-
-  /// Skip GPS — proceed without location (used only after a capture error
-  /// so the driver isn't permanently blocked by a broken/unavailable GPS).
   void _skipGps() {
     showDialog(
       context: context,
@@ -205,13 +245,12 @@ class _GpsVerificationScreenState extends State<GpsVerificationScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
-              final gps = GpsLocation(
-                latitude: 0,
-                longitude: 0,
-                address: AppStrings.gpsNotAvailable,
+              _navigateToReview(GpsLocation(
+                latitude:   0,
+                longitude:  0,
+                address:    AppStrings.gpsNotAvailable,
                 capturedAt: DateTime.now(),
-              );
-              context.push(AppRoutes.inspectionReview, extra: {'submission': _submissionWithGps(gps)});
+              ));
             },
             child: const Text(AppStrings.continueWithoutGps,
                 style: TextStyle(color: AppColors.danger, fontWeight: FontWeight.w700)),
@@ -221,6 +260,18 @@ class _GpsVerificationScreenState extends State<GpsVerificationScreen> {
     );
   }
 
+  void _navigateToReview(GpsLocation gps) {
+    context.push(AppRoutes.inspectionReview, extra: {
+      'qrData':          widget.qrData,
+      'inspectionType':  widget.inspectionType,
+      'responses':       widget.responses,
+      'defects':         widget.defects,
+      'additionalNotes': widget.additionalNotes ?? '',
+      'gpsLocation':     gps,
+    });
+  }
+
+  // ── Build ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -258,7 +309,7 @@ class _GpsVerificationScreenState extends State<GpsVerificationScreen> {
                 children: [
 
                   // Error
-                  if (_error != null)
+                  if (_state == _GpsState.error)
                     Container(
                       margin: const EdgeInsets.only(bottom: 20),
                       padding: const EdgeInsets.all(14),
@@ -279,7 +330,7 @@ class _GpsVerificationScreenState extends State<GpsVerificationScreen> {
                             ),
                           ]),
                           const SizedBox(height: 6),
-                          Text(_error!, style: const TextStyle(fontSize: 13, color: AppColors.danger, height: 1.4)),
+                          Text(_errorDetail, style: const TextStyle(fontSize: 13, color: AppColors.danger, height: 1.4)),
                           const SizedBox(height: 10),
                           SizedBox(
                             width: double.infinity,
@@ -305,9 +356,9 @@ class _GpsVerificationScreenState extends State<GpsVerificationScreen> {
                     ),
 
                   // Map placeholder + location card
-                  if (_isCapturing)
+                  if (_state == _GpsState.loading)
                     _CaptureLoader(statusText: _statusText)
-                  else if (_lat != null) ...[
+                  else if (_state == _GpsState.success && _position != null) ...[
                     // Mini map placeholder (Google Maps widget would be here)
                     Container(
                       height: 220,
@@ -385,11 +436,11 @@ class _GpsVerificationScreenState extends State<GpsVerificationScreen> {
 
                     // Location Details card
                     _LocationCard(
-                      lat:       _lat!,
-                      lng:       _lng!,
-                      address:   _address,
+                      lat:        _position!.latitude,
+                      lng:        _position!.longitude,
+                      address:    _address,
                       capturedAt: _capturedAt,
-                      accuracy:  _accuracy,
+                      accuracy:   _position!.accuracy,
                     ),
                     const SizedBox(height: 12),
 
@@ -419,8 +470,26 @@ class _GpsVerificationScreenState extends State<GpsVerificationScreen> {
               width: double.infinity,
               height: 52,
               child: ElevatedButton(
-                onPressed: (_isCapturing || _lat == null) ? null : _confirmAndContinue,
-                child: _isCapturing
+                style: ElevatedButton.styleFrom(
+                  backgroundColor:
+                  AppColors.green,
+                  foregroundColor: AppColors.textOnPrimary,
+                  disabledBackgroundColor: AppColors.border,
+                  disabledForegroundColor: AppColors.textSecondary,
+                  padding: EdgeInsets.symmetric(
+                      vertical: AppResponsive.padding(context, 14)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+                onPressed: (_state != _GpsState.success || _position == null)
+                    ? null
+                    : () => _navigateToReview(GpsLocation(
+                          latitude:   _position!.latitude,
+                          longitude:  _position!.longitude,
+                          address:    _address,
+                          capturedAt: _capturedAt,
+                        )),
+                child: _state == _GpsState.loading
                     ? const SizedBox(
                         width: 22, height: 22,
                         child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
@@ -434,6 +503,10 @@ class _GpsVerificationScreenState extends State<GpsVerificationScreen> {
     );
   }
 }
+
+// ── Support widgets ───────────────────────────────────────────────────────────
+
+enum _GpsState { loading, error, success }
 
 class _CaptureLoader extends StatelessWidget {
   final String statusText;

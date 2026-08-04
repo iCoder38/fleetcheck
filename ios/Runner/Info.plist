@@ -45,6 +45,13 @@
     <key>NSContactsUsageDescription</key>
     <string>FleetCheck does not access your contacts.</string>
 
+    <!-- Lets downloaded inspection PDFs (saved under the app's Documents
+         directory) show up in the iOS Files app under "On My iPhone". -->
+    <key>UIFileSharingEnabled</key>
+    <true/>
+    <key>LSSupportsOpeningDocumentsInPlace</key>
+    <true/>
+
     <!-- UI -->
     <key>UILaunchStoryboardName</key>
     <string>LaunchScreen</string>

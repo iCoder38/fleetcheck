@@ -1,12 +1,16 @@
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:printing/printing.dart';
 import '../../blocs/history/inspection_history_detail/inspection_history_detail_bloc.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
-import '../../core/constants/api_constants.dart';
+import '../../core/services/pdf_report_service.dart';
+import '../../core/services/storage_service.dart';
 
 class InspectionHistoryDetailScreen extends StatefulWidget {
   final int inspectionId;
@@ -23,19 +27,78 @@ class _InspectionHistoryDetailScreenState extends State<InspectionHistoryDetailS
         .add(DetailRequested(widget.inspectionId));
   }
 
-  Future<void> _downloadPdf() async {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text(AppStrings.generatingPdf), backgroundColor: AppColors.secondary),
-    );
+  bool _isDownloading = false;
+  bool _isSharing     = false;
+
+  String _reportFileName(Map<String, dynamic> d) {
+    final id = (d['inspection_id'] ?? widget.inspectionId).toString();
+    final safeId = id.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+    return 'FleetCheck_$safeId.pdf';
+  }
+
+  Future<Uint8List> _buildPdfBytes(Map<String, dynamic> d) {
+    final driverData = StorageService().getDriverData();
+    return PdfReportService().generateInspectionReport(d, driverData: driverData);
+  }
+
+  Future<Directory> _reportsDirectory() async {
+    // App-scoped storage on both platforms — no runtime storage permission
+    // needed on Android (app-specific external dir) or iOS (Documents dir).
+    final base = Platform.isAndroid
+        ? (await getExternalStorageDirectory()) ?? await getApplicationDocumentsDirectory()
+        : await getApplicationDocumentsDirectory();
+    final dir = Directory('${base.path}/YCheckPro Reports');
+    if (!await dir.exists()) await dir.create(recursive: true);
+    return dir;
+  }
+
+  Future<void> _downloadPdf(Map<String, dynamic> d) async {
+    setState(() => _isDownloading = true);
+    try {
+      final bytes = await _buildPdfBytes(d);
+      final fileName = _reportFileName(d);
+      final dir = await _reportsDirectory();
+      final file = File('${dir.path}/$fileName');
+      await file.writeAsBytes(bytes, flush: true);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(AppStrings.reportDownloadedSuccess),
+          backgroundColor: AppColors.secondary,
+          action: SnackBarAction(
+            label: 'OPEN',
+            textColor: Colors.white,
+            onPressed: () => Printing.layoutPdf(onLayout: (_) async => bytes, name: fileName),
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(AppStrings.pdfFailed), backgroundColor: AppColors.danger),
+      );
+    } finally {
+      if (mounted) setState(() => _isDownloading = false);
+    }
   }
 
   Future<void> _shareReport(Map<String, dynamic> d) async {
-    final reportUrl =
-        '${ApiConstants.baseUrl}${ApiConstants.downloadReport(widget.inspectionId)}';
-    await Share.share(
-      'FleetCheck Inspection Report\nID: ${d['inspection_id']}\nVehicle: ${d['vehicle_number']}\n$reportUrl',
-      subject: 'FleetCheck Inspection Report',
-    );
+    setState(() => _isSharing = true);
+    try {
+      final bytes = await _buildPdfBytes(d);
+      await Printing.sharePdf(
+        bytes: bytes,
+        filename: _reportFileName(d),
+        subject: 'Y-CheckPro Inspection Report – ${(d['inspection_id'] ?? widget.inspectionId)}',
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(AppStrings.shareFailed), backgroundColor: AppColors.danger),
+      );
+    } finally {
+      if (mounted) setState(() => _isSharing = false);
+    }
   }
 
   @override
@@ -117,7 +180,7 @@ class _InspectionHistoryDetailScreenState extends State<InspectionHistoryDetailS
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Truck Details
-                const _PlainSectionLabel(AppStrings.truckDetailsTitle),
+                const _PlainSectionLabel(AppStrings.vehicleDetails),
                 _PlainCard(children: [
                   _PlainRow(AppStrings.labelVehicleNumber, vehicleLabel),
                   _PlainRow(AppStrings.labelDriverName, (d['driver_name'] ?? '—').toString()),
@@ -257,9 +320,14 @@ class _InspectionHistoryDetailScreenState extends State<InspectionHistoryDetailS
                 child: SizedBox(
                   height: 52,
                   child: OutlinedButton.icon(
-                    onPressed: _downloadPdf,
-                    icon:  const Icon(Icons.picture_as_pdf_rounded, size: 18),
-                    label: const Text(AppStrings.downloadPdf, style: TextStyle(fontWeight: FontWeight.w700)),
+                    onPressed: _isDownloading ? null : () => _downloadPdf(d),
+                    icon: _isDownloading
+                        ? const SizedBox(
+                            width: 16, height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.green))
+                        : const Icon(Icons.picture_as_pdf_rounded, size: 18),
+                    label: Text(_isDownloading ? AppStrings.generatingPdf : AppStrings.downloadPdf,
+                        style: const TextStyle(fontWeight: FontWeight.w700)),
                     style: OutlinedButton.styleFrom(
                         foregroundColor: AppColors.green,
                         side: const BorderSide(color: AppColors.green, width: 1.5),
@@ -272,9 +340,14 @@ class _InspectionHistoryDetailScreenState extends State<InspectionHistoryDetailS
                 child: SizedBox(
                   height: 52,
                   child: ElevatedButton.icon(
-                    onPressed: () => _shareReport(d),
-                    icon:  const Icon(Icons.share_outlined, size: 18),
-                    label: const Text(AppStrings.shareLabel, style: TextStyle(fontWeight: FontWeight.w800)),
+                    onPressed: _isSharing ? null : () => _shareReport(d),
+                    icon: _isSharing
+                        ? const SizedBox(
+                            width: 16, height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Icon(Icons.share_outlined, size: 18),
+                    label: Text(_isSharing ? AppStrings.sharingLabel : AppStrings.shareLabel,
+                        style: const TextStyle(fontWeight: FontWeight.w800)),
                     style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.green,
                         foregroundColor: Colors.white,
