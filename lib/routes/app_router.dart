@@ -1,4 +1,3 @@
-import 'package:fleetcheck/screens/zone_walkaround_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -35,6 +34,8 @@ import '../screens/history/inspection_history_detail_screen.dart';
 import '../screens/help/help_support_screen.dart';
 import '../screens/main_scaffold.dart';
 import '../models/inspection_model.dart';
+import '../screens/zone_review_screen.dart';
+import '../screens/zone_walkaround_screen.dart';
 
 class AppRoutes {
   static const String splash = '/';
@@ -56,8 +57,9 @@ class AppRoutes {
   static const String notifications = '/notifications';
   static const String history = '/history';
   static const String historyDetail = '/history/:id';
-  static const String help = '/help';
-  static const String zoneWalkAround = '/zoneWalkAround';
+  static const String help          = '/help';
+  static const String zoneWalkAround = '/zone-walk-around';
+  static const String zoneReview     = '/zone-review';
 }
 
 final GoRouter appRouter = GoRouter(
@@ -236,10 +238,21 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: AppRoutes.zoneWalkAround,
       builder: (context, state) {
-        final extra = state.extra as Map<String, dynamic>;
+        final extra   = state.extra as Map<String, dynamic>;
         return ZoneWalkAroundScreen(
           qrCode: extra['qr_code'] as String,
-          qrData: extra['qr_data'] as Map<String, dynamic>,
+          qrData: extra['qr_data'] as Map<String, dynamic>? ?? {},
+        );
+      },
+    ),
+    GoRoute(
+      path: AppRoutes.zoneReview,
+      builder: (context, state) {
+        final extra = state.extra as Map<String, dynamic>;
+        return ZoneReviewScreen(
+          sessionRef: extra['session_ref'] as String,
+          zoneScan:   extra['zone_scan']   as Map<String, dynamic>?,
+          progress:   extra['progress']    as Map<String, dynamic>?,
         );
       },
     ),

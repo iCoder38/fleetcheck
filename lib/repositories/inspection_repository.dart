@@ -120,6 +120,15 @@ class InspectionRepository {
     );
   }
 
+  Future<ApiResult<Map<String, dynamic>>> getZoneStatus({
+    required String sessionRef,
+  }) async {
+    return _api.call<Map<String, dynamic>>(
+      request: () => _api.get(ApiConstants.zoneStatus, params: {'session_ref': sessionRef}),
+      fromJson: (data) => data,
+    );
+  }
+
   String getReportUrl(int id) =>
       '${ApiConstants.baseUrl}${ApiConstants.inspectionReport(id)}';
 
@@ -127,12 +136,18 @@ class InspectionRepository {
     required String qrCode,
     required String sessionRef,
     required String inspectionType,
+    double? gpsLat,
+    double? gpsLng,
+    String? gpsAddress,
   }) async {
     return _api.call<Map<String, dynamic>>(
       request: () => _api.post(ApiConstants.qrZoneScan, data: {
-        'qr_code': qrCode,
-        'session_ref': sessionRef,
-        'inspection_type': inspectionType,
+        'qr_code':        qrCode,
+        'session_ref':    sessionRef,
+        'inspection_type':inspectionType,
+        if (gpsLat != null) 'gps_lat': gpsLat,
+        if (gpsLng != null) 'gps_lng': gpsLng,
+        if (gpsAddress != null && gpsAddress.isNotEmpty) 'gps_address': gpsAddress,
       }),
       fromJson: (data) => data,
     );

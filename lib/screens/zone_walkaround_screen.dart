@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
-import '../../core/constants/app_colors.dart';
-import '../../core/theme/app_responsive.dart';
-import '../../repositories/inspection_repository.dart';
-import '../../routes/app_router.dart';
+import '../core/constants/app_colors.dart';
+import '../core/theme/app_responsive.dart';
+import '../repositories/inspection_repository.dart';
+import '../routes/app_router.dart';
 
 // ─────────────────────────────────────────────────────────────
 // ZoneWalkAroundScreen
@@ -44,21 +45,54 @@ class _ZoneWalkAroundScreenState extends State<ZoneWalkAroundScreen> {
   bool _saving   = false;
   String _error  = '';
 
+  // GPS for this zone scan
+  double? _gpsLat;
+  double? _gpsLng;
+  String  _gpsAddress = '';
+
   @override
   void initState() {
     super.initState();
     // Restore session_ref from previous zone scan if available
     _sessionRef = widget.qrData['session_ref'] as String? ?? '';
-    _loadZoneScan();
+    _fetchGpsAndLoad();
   }
 
   // ── Call zone-scan API ────────────────────────────────────
+  Future<void> _fetchGpsAndLoad() async {
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (serviceEnabled) {
+        LocationPermission perm = await Geolocator.checkPermission();
+        if (perm == LocationPermission.denied) {
+          perm = await Geolocator.requestPermission();
+        }
+        if (perm != LocationPermission.deniedForever) {
+          final pos = await Geolocator.getCurrentPosition(
+              desiredAccuracy: LocationAccuracy.high)
+              .timeout(const Duration(seconds: 8), onTimeout: () =>
+                  Position(latitude: 0, longitude: 0, timestamp: DateTime.now(),
+                      accuracy: 0, altitude: 0, heading: 0, speed: 0,
+                      speedAccuracy: 0, altitudeAccuracy: 0, headingAccuracy: 0));
+          if (pos.latitude != 0) {
+            _gpsLat = pos.latitude;
+            _gpsLng = pos.longitude;
+          }
+        }
+      }
+    } catch (_) {}
+    _loadZoneScan();
+  }
+
   Future<void> _loadZoneScan() async {
     setState(() { _loading = true; _error = ''; });
     final result = await _repo.zoneScan(
       qrCode:         widget.qrCode,
       sessionRef:     _sessionRef,
       inspectionType: 'pre_trip',
+      gpsLat:         _gpsLat,
+      gpsLng:         _gpsLng,
+      gpsAddress:     _gpsAddress,
     );
     if (!mounted) return;
     if (result.success && result.data != null) {
@@ -139,61 +173,13 @@ class _ZoneWalkAroundScreenState extends State<ZoneWalkAroundScreen> {
     setState(() => _saving = false);
   }
 
-  // ── All zones complete dialog ─────────────────────────────
+  // ── All zones complete → navigate to Zone Review Screen ──────
   void _showAllCompleteDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: const BoxDecoration(
-                color: Color(0xFFE8F5E9),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.check_circle_rounded,
-                  color: AppColors.secondary, size: 48),
-            ),
-            const SizedBox(height: 16),
-            const Text('Walk-Around Complete!',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800,
-                    color: AppColors.primary),
-                textAlign: TextAlign.center),
-            const SizedBox(height: 8),
-            Text(
-              'All zones have been inspected. '
-              'You can now submit the full inspection report.',
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-        actions: [
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.secondary,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
-              ),
-              onPressed: () {
-                Navigator.pop(context);
-                // Pop back to scanner/home
-                context.go(AppRoutes.dashboard);
-              },
-              child: const Text('Done',
-                  style: TextStyle(fontWeight: FontWeight.w800,
-                      color: Colors.white)),
-            ),
-          ),
-        ],
-      ),
-    );
+    context.push(AppRoutes.zoneReview, extra: {
+      'session_ref': _sessionRef,
+      'zone_scan':   _zoneScan,
+      'progress':    _progress,
+    });
   }
 
   @override
