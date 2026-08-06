@@ -19,17 +19,18 @@ class ApiConstants {
   static const String driverStats = '/driver/stats';
 
   // QR
-  static const String qrScan = '/qr/scan';
-  static const String scanQr = '/qr/scan'; // alias for inspection_repository
+  static const String qrScan     = '/qr/scan';
+  static const String scanQr     = '/qr/scan'; // alias for inspection_repository
   static const String qrZoneScan = '/qr/zone-scan'; // Zone QR scan
 
   // Inspection
-  static const String inspectionSubmit = '/inspection/submit';
-  static const String inspectionList = '/inspection/list';
-  static const String inspectionTemplates = '/inspection/templates';
-  static const String inspectionChecklist = '/inspection/checklist';
-  static const String zoneSubmit = '/inspection/zone-submit'; // Zone submit
-  static const String zoneStatus = '/inspection/zone-status'; // Zone progress
+  static const String inspectionSubmit   = '/inspection/submit';
+  static const String inspectionList     = '/inspection/list';
+  static const String inspectionStats    = '/inspection/stats'; // Dashboard stats
+  static const String inspectionTemplates= '/inspection/templates';
+  static const String inspectionChecklist= '/inspection/checklist';
+  static const String zoneSubmit         = '/inspection/zone-submit'; // Zone submit
+  static const String zoneStatus         = '/inspection/zone-status'; // Zone progress
   static String inspectionDetail(int id) => '/inspection/detail/$id';
   static String inspectionReport(int id) => '/inspection/report/$id';
 

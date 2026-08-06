@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
-import '../core/constants/app_colors.dart';
-import '../core/theme/app_responsive.dart';
-import '../repositories/inspection_repository.dart';
-import '../routes/app_router.dart';
+import '../../core/constants/app_colors.dart';
+import '../../core/theme/app_responsive.dart';
+import '../../repositories/inspection_repository.dart';
+import '../../routes/app_router.dart';
 
 // ─────────────────────────────────────────────────────────────
 // ZoneWalkAroundScreen
@@ -77,6 +78,18 @@ class _ZoneWalkAroundScreenState extends State<ZoneWalkAroundScreen> {
           if (pos.latitude != 0) {
             _gpsLat = pos.latitude;
             _gpsLng = pos.longitude;
+            // Reverse geocode to get address string
+            try {
+              final placemarks = await placemarkFromCoordinates(
+                  pos.latitude, pos.longitude);
+              if (placemarks.isNotEmpty) {
+                final p = placemarks.first;
+                _gpsAddress = [
+                  p.street, p.subLocality, p.locality,
+                  p.administrativeArea, p.country
+                ].where((s) => s != null && s!.isNotEmpty).join(', ');
+              }
+            } catch (_) {}
           }
         }
       }
