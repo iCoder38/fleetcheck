@@ -36,11 +36,11 @@ class DefaultFirebaseOptions {
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'YOUR_IOS_API_KEY',
-    appId: 'YOUR_IOS_APP_ID',
-    messagingSenderId: 'YOUR_SENDER_ID',
-    projectId: 'YOUR_PROJECT_ID',
-    storageBucket: 'YOUR_PROJECT_ID.appspot.com',
-    iosBundleId: 'com.FleetCheck.Evs',
+    apiKey: 'AIzaSyD9eFUkqXURMuc6TioxJVy68_UIXuifNdw',
+    appId: '1:1093597179954:ios:07c9e98a8cd08006468c2b',
+    messagingSenderId: '1093597179954',
+    projectId: 'fleetcheek',
+    storageBucket: 'fleetcheek.firebasestorage.app',
+    iosBundleId: 'com.fleetCheck.evs',
   );
 }
