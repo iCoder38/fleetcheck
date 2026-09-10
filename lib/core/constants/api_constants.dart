@@ -2,7 +2,7 @@ class ApiConstants {
   ApiConstants._();
 
   static const String baseUrl =
-      'https://demo1.evirtualservices.com/fleetcheckapp/api';
+      'https://company.y-checkpro.com/api';
 
   // Auth
   static const String login = '/auth/login';

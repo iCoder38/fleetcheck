@@ -144,7 +144,7 @@ signingConfigs {
 
 The app connects to:
 ```
-Base URL: https://demo1.evirtualservices.com/fleetcheck/api
+Base URL: https://company.y-checkpro.com/api/
 ```
 
 Build the PHP API endpoints in the sub-admin backend. All endpoints are defined in:

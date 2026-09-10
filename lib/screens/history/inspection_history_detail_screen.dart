@@ -17,10 +17,12 @@ class InspectionHistoryDetailScreen extends StatefulWidget {
   const InspectionHistoryDetailScreen({super.key, required this.inspectionId});
 
   @override
-  State<InspectionHistoryDetailScreen> createState() => _InspectionHistoryDetailScreenState();
+  State<InspectionHistoryDetailScreen> createState() =>
+      _InspectionHistoryDetailScreenState();
 }
 
-class _InspectionHistoryDetailScreenState extends State<InspectionHistoryDetailScreen> {
+class _InspectionHistoryDetailScreenState
+    extends State<InspectionHistoryDetailScreen> {
   void _load() {
     context
         .read<InspectionHistoryDetailBloc>()
@@ -28,7 +30,7 @@ class _InspectionHistoryDetailScreenState extends State<InspectionHistoryDetailS
   }
 
   bool _isDownloading = false;
-  bool _isSharing     = false;
+  bool _isSharing = false;
 
   String _reportFileName(Map<String, dynamic> d) {
     final id = (d['inspection_id'] ?? widget.inspectionId).toString();
@@ -38,14 +40,16 @@ class _InspectionHistoryDetailScreenState extends State<InspectionHistoryDetailS
 
   Future<Uint8List> _buildPdfBytes(Map<String, dynamic> d) {
     final driverData = StorageService().getDriverData();
-    return PdfReportService().generateInspectionReport(d, driverData: driverData);
+    return PdfReportService()
+        .generateInspectionReport(d, driverData: driverData);
   }
 
   Future<Directory> _reportsDirectory() async {
     // App-scoped storage on both platforms — no runtime storage permission
     // needed on Android (app-specific external dir) or iOS (Documents dir).
     final base = Platform.isAndroid
-        ? (await getExternalStorageDirectory()) ?? await getApplicationDocumentsDirectory()
+        ? (await getExternalStorageDirectory()) ??
+            await getApplicationDocumentsDirectory()
         : await getApplicationDocumentsDirectory();
     final dir = Directory('${base.path}/YCheckPro Reports');
     if (!await dir.exists()) await dir.create(recursive: true);
@@ -57,6 +61,21 @@ class _InspectionHistoryDetailScreenState extends State<InspectionHistoryDetailS
     try {
       final bytes = await _buildPdfBytes(d);
       final fileName = _reportFileName(d);
+
+      // iOS does not expose an Android-style public Downloads directory.
+      // Present its native export sheet instead so the driver can choose
+      // "Save to Files" and pick On My iPhone or iCloud Drive. In
+      // particular, do not call layoutPdf here: that opens the print dialog.
+      if (Platform.isIOS) {
+        await Printing.sharePdf(
+          bytes: bytes,
+          filename: fileName,
+          subject:
+              'Y-CheckPro Inspection Report – ${(d['inspection_id'] ?? widget.inspectionId)}',
+        );
+        return;
+      }
+
       final dir = await _reportsDirectory();
       final file = File('${dir.path}/$fileName');
       await file.writeAsBytes(bytes, flush: true);
@@ -68,14 +87,17 @@ class _InspectionHistoryDetailScreenState extends State<InspectionHistoryDetailS
           action: SnackBarAction(
             label: 'OPEN',
             textColor: Colors.white,
-            onPressed: () => Printing.layoutPdf(onLayout: (_) async => bytes, name: fileName),
+            onPressed: () => Printing.layoutPdf(
+                onLayout: (_) async => bytes, name: fileName),
           ),
         ),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text(AppStrings.pdfFailed), backgroundColor: AppColors.danger),
+        const SnackBar(
+            content: Text(AppStrings.pdfFailed),
+            backgroundColor: AppColors.danger),
       );
     } finally {
       if (mounted) setState(() => _isDownloading = false);
@@ -89,12 +111,15 @@ class _InspectionHistoryDetailScreenState extends State<InspectionHistoryDetailS
       await Printing.sharePdf(
         bytes: bytes,
         filename: _reportFileName(d),
-        subject: 'Y-CheckPro Inspection Report – ${(d['inspection_id'] ?? widget.inspectionId)}',
+        subject:
+            'Y-CheckPro Inspection Report – ${(d['inspection_id'] ?? widget.inspectionId)}',
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text(AppStrings.shareFailed), backgroundColor: AppColors.danger),
+        const SnackBar(
+            content: Text(AppStrings.shareFailed),
+            backgroundColor: AppColors.danger),
       );
     } finally {
       if (mounted) setState(() => _isSharing = false);
@@ -103,7 +128,8 @@ class _InspectionHistoryDetailScreenState extends State<InspectionHistoryDetailS
 
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<InspectionHistoryDetailBloc, InspectionHistoryDetailState>(
+    return BlocBuilder<InspectionHistoryDetailBloc,
+        InspectionHistoryDetailState>(
       builder: (context, state) {
         final title = state is InspectionHistoryDetailLoaded
             ? state.detail['inspection_id'] ?? AppStrings.detailFallback
@@ -114,7 +140,8 @@ class _InspectionHistoryDetailScreenState extends State<InspectionHistoryDetailS
             children: [
               Container(
                 width: double.infinity,
-                decoration: const BoxDecoration(gradient: AppColors.primaryGradient),
+                decoration:
+                    const BoxDecoration(gradient: AppColors.primaryGradient),
                 child: SafeArea(
                   bottom: false,
                   child: Padding(
@@ -125,13 +152,17 @@ class _InspectionHistoryDetailScreenState extends State<InspectionHistoryDetailS
                           onTap: () => context.pop(),
                           child: const Padding(
                             padding: EdgeInsets.only(right: 10),
-                            child: Icon(Icons.arrow_back_rounded, color: Colors.white, size: 22),
+                            child: Icon(Icons.arrow_back_rounded,
+                                color: Colors.white, size: 22),
                           ),
                         ),
                         Expanded(
                           child: Text(title,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white)),
+                              style: const TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white)),
                         ),
                       ],
                     ),
@@ -140,8 +171,9 @@ class _InspectionHistoryDetailScreenState extends State<InspectionHistoryDetailS
               ),
               Expanded(
                 child: switch (state) {
-                  InspectionHistoryDetailLoading() =>
-                    const Center(child: CircularProgressIndicator(color: AppColors.secondary)),
+                  InspectionHistoryDetailLoading() => const Center(
+                      child: CircularProgressIndicator(
+                          color: AppColors.secondary)),
                   InspectionHistoryDetailFailure() =>
                     _ErrorView(message: state.message, onRetry: _load),
                   InspectionHistoryDetailLoaded() => _buildDetail(state.detail),
@@ -157,10 +189,10 @@ class _InspectionHistoryDetailScreenState extends State<InspectionHistoryDetailS
   Widget _buildDetail(Map<String, dynamic> d) {
     final isPreTrip = (d['inspection_type'] ?? '') == 'pre_trip';
     final responses = (d['responses'] as List<dynamic>?) ?? [];
-    final defects   = (d['defects']   as List<dynamic>?) ?? [];
-    final gps       = d['gps_location'] as Map<String, dynamic>?;
+    final defects = (d['defects'] as List<dynamic>?) ?? [];
+    final gps = d['gps_location'] as Map<String, dynamic>?;
 
-    final total  = responses.length;
+    final total = responses.length;
     final passed = responses.where((r) {
       final resp = (r as Map<String, dynamic>)['selected_option'] as String?;
       return resp == 'Good' || resp == 'Available' || resp == 'No';
@@ -183,22 +215,30 @@ class _InspectionHistoryDetailScreenState extends State<InspectionHistoryDetailS
                 const _PlainSectionLabel(AppStrings.vehicleDetails),
                 _PlainCard(children: [
                   _PlainRow(AppStrings.labelVehicleNumber, vehicleLabel),
-                  _PlainRow(AppStrings.labelDriverName, (d['driver_name'] ?? '—').toString()),
+                  _PlainRow(AppStrings.labelDriverName,
+                      (d['driver_name'] ?? '—').toString()),
                   _PlainRow(AppStrings.labelVin, (d['vin'] ?? '—').toString()),
-                  _PlainRow(AppStrings.labelFleetNumber, (d['fleet_number'] ?? '—').toString()),
-                  _PlainRow(AppStrings.labelCompany, (d['company_name'] ?? '—').toString(), isLast: true),
+                  _PlainRow(AppStrings.labelFleetNumber,
+                      (d['fleet_number'] ?? '—').toString()),
+                  _PlainRow(AppStrings.labelCompany,
+                      (d['company_name'] ?? '—').toString(),
+                      isLast: true),
                 ]),
                 const SizedBox(height: 18),
 
                 // Inspection Type / Status
                 const _PlainSectionLabel(AppStrings.labelInspectionType),
                 _PlainCard(children: [
-                  _PlainRow(AppStrings.labelType, isPreTrip ? AppStrings.preTrip : AppStrings.postTrip),
-                  _PlainRow(AppStrings.labelStatus, _capitalize((d['status'] ?? '').toString()),
+                  _PlainRow(AppStrings.labelType,
+                      isPreTrip ? AppStrings.preTrip : AppStrings.postTrip),
+                  _PlainRow(AppStrings.labelStatus,
+                      _capitalize((d['status'] ?? '').toString()),
                       valueColor: _statusColor((d['status'] ?? '').toString())),
-                  _PlainRow(AppStrings.labelDateTime,
+                  _PlainRow(
+                      AppStrings.labelDateTime,
                       d['submitted_at'] != null
-                          ? DateFormat('MMM d, yyyy hh:mm a').format(DateTime.parse(d['submitted_at'] as String))
+                          ? DateFormat('MMM d, yyyy hh:mm a').format(
+                              DateTime.parse(d['submitted_at'] as String))
                           : '—',
                       isLast: true),
                 ]),
@@ -213,26 +253,43 @@ class _InspectionHistoryDetailScreenState extends State<InspectionHistoryDetailS
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(14),
                       boxShadow: [
-                        BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 12, offset: const Offset(0, 4)),
+                        BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.05),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4)),
                       ],
                     ),
                     child: Column(
                       children: [
                         Row(children: [
-                          Expanded(child: _StatBox(value: '$total', label: AppStrings.statTotal, color: AppColors.info)),
+                          Expanded(
+                              child: _StatBox(
+                                  value: '$total',
+                                  label: AppStrings.statTotal,
+                                  color: AppColors.info)),
                           const SizedBox(width: 10),
-                          Expanded(child: _StatBox(value: '$passed', label: AppStrings.statPassed, color: AppColors.green)),
+                          Expanded(
+                              child: _StatBox(
+                                  value: '$passed',
+                                  label: AppStrings.statPassed,
+                                  color: AppColors.green)),
                           const SizedBox(width: 10),
-                          Expanded(child: _StatBox(
-                              value: '$defectCount',
-                              label: AppStrings.statDefects,
-                              color: defectCount > 0 ? AppColors.danger : AppColors.textSecondary)),
+                          Expanded(
+                              child: _StatBox(
+                                  value: '$defectCount',
+                                  label: AppStrings.statDefects,
+                                  color: defectCount > 0
+                                      ? AppColors.danger
+                                      : AppColors.textSecondary)),
                         ]),
                         const SizedBox(height: 14),
                         Align(
                           alignment: Alignment.centerLeft,
-                          child: Text(AppStrings.itemsPassedCaption(passed, total),
-                              style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                          child: Text(
+                              AppStrings.itemsPassedCaption(passed, total),
+                              style: const TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.textSecondary)),
                         ),
                         const SizedBox(height: 6),
                         ClipRRect(
@@ -240,9 +297,12 @@ class _InspectionHistoryDetailScreenState extends State<InspectionHistoryDetailS
                           child: LinearProgressIndicator(
                             value: total > 0 ? passed / total : 0,
                             minHeight: 8,
-                            backgroundColor: AppColors.border.withValues(alpha: 0.3),
+                            backgroundColor:
+                                AppColors.border.withValues(alpha: 0.3),
                             valueColor: AlwaysStoppedAnimation<Color>(
-                                passed / total >= 0.8 ? AppColors.green : AppColors.amber),
+                                passed / total >= 0.8
+                                    ? AppColors.green
+                                    : AppColors.amber),
                           ),
                         ),
                       ],
@@ -252,15 +312,17 @@ class _InspectionHistoryDetailScreenState extends State<InspectionHistoryDetailS
 
                   // Checklist Answers (itemized)
                   _PlainSectionLabel(AppStrings.checklistAnswersTitle(total)),
-                  _PlainCard(children: responses.asMap().entries.map((e) {
-                    final res  = e.value as Map<String, dynamic>;
+                  _PlainCard(
+                      children: responses.asMap().entries.map((e) {
+                    final res = e.value as Map<String, dynamic>;
                     final resp = res['selected_option'] as String? ?? '—';
-                    final isOk = resp == 'Good' || resp == 'Available' || resp == 'No';
+                    final isOk =
+                        resp == 'Good' || resp == 'Available' || resp == 'No';
                     return _ChecklistRow(
-                      item:     res['item_label'] as String? ?? '',
+                      item: res['item_label'] as String? ?? '',
                       response: resp,
-                      isOk:     isOk,
-                      isLast:   e.key == responses.length - 1,
+                      isOk: isOk,
+                      isLast: e.key == responses.length - 1,
                     );
                   }).toList()),
                   const SizedBox(height: 18),
@@ -269,11 +331,12 @@ class _InspectionHistoryDetailScreenState extends State<InspectionHistoryDetailS
                 // Defects
                 if (defects.isNotEmpty) ...[
                   const _PlainSectionLabel(AppStrings.defectsFoundTitle),
-                  _PlainCard(children: defects.map((def) {
-                    final dd  = def as Map<String, dynamic>;
+                  _PlainCard(
+                      children: defects.map((def) {
+                    final dd = def as Map<String, dynamic>;
                     return _DefectRow(
-                      category:    dd['category'] as String? ?? '',
-                      severity:    dd['severity'] as String? ?? '',
+                      category: dd['category'] as String? ?? '',
+                      severity: dd['severity'] as String? ?? '',
                       description: dd['description'] as String? ?? '',
                     );
                   }).toList()),
@@ -284,8 +347,11 @@ class _InspectionHistoryDetailScreenState extends State<InspectionHistoryDetailS
                 if (gps != null) ...[
                   const _PlainSectionLabel(AppStrings.labelGpsLocation),
                   _PlainCard(children: [
-                    _PlainRow(AppStrings.labelAddress, (gps['address'] ?? '—').toString(), multiLine: true),
-                    _PlainRow(AppStrings.labelCoordinates,
+                    _PlainRow(AppStrings.labelAddress,
+                        (gps['address'] ?? '—').toString(),
+                        multiLine: true),
+                    _PlainRow(
+                        AppStrings.labelCoordinates,
                         '${(gps['latitude'] as num?)?.toStringAsFixed(5) ?? '—'}, '
                         '${(gps['longitude'] as num?)?.toStringAsFixed(5) ?? '—'}',
                         isLast: true),
@@ -300,7 +366,10 @@ class _InspectionHistoryDetailScreenState extends State<InspectionHistoryDetailS
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       child: Text(d['additional_notes'] as String,
-                          style: const TextStyle(fontSize: 13, color: AppColors.primary, height: 1.5)),
+                          style: const TextStyle(
+                              fontSize: 13,
+                              color: AppColors.primary,
+                              height: 1.5)),
                     ),
                   ]),
                 ],
@@ -312,8 +381,11 @@ class _InspectionHistoryDetailScreenState extends State<InspectionHistoryDetailS
 
         // Action buttons
         Container(
-          padding: EdgeInsets.fromLTRB(20, 12, 20, MediaQuery.of(context).padding.bottom + 12),
-          decoration: const BoxDecoration(color: Colors.white, border: Border(top: BorderSide(color: AppColors.border))),
+          padding: EdgeInsets.fromLTRB(
+              20, 12, 20, MediaQuery.of(context).padding.bottom + 12),
+          decoration: const BoxDecoration(
+              color: Colors.white,
+              border: Border(top: BorderSide(color: AppColors.border))),
           child: Row(
             children: [
               Expanded(
@@ -323,15 +395,22 @@ class _InspectionHistoryDetailScreenState extends State<InspectionHistoryDetailS
                     onPressed: _isDownloading ? null : () => _downloadPdf(d),
                     icon: _isDownloading
                         ? const SizedBox(
-                            width: 16, height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.green))
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: AppColors.green))
                         : const Icon(Icons.picture_as_pdf_rounded, size: 18),
-                    label: Text(_isDownloading ? AppStrings.generatingPdf : AppStrings.downloadPdf,
+                    label: Text(
+                        _isDownloading
+                            ? AppStrings.generatingPdf
+                            : AppStrings.downloadPdf,
                         style: const TextStyle(fontWeight: FontWeight.w700)),
                     style: OutlinedButton.styleFrom(
                         foregroundColor: AppColors.green,
-                        side: const BorderSide(color: AppColors.green, width: 1.5),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+                        side: const BorderSide(
+                            color: AppColors.green, width: 1.5),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14))),
                   ),
                 ),
               ),
@@ -343,15 +422,21 @@ class _InspectionHistoryDetailScreenState extends State<InspectionHistoryDetailS
                     onPressed: _isSharing ? null : () => _shareReport(d),
                     icon: _isSharing
                         ? const SizedBox(
-                            width: 16, height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white))
                         : const Icon(Icons.share_outlined, size: 18),
-                    label: Text(_isSharing ? AppStrings.sharingLabel : AppStrings.shareLabel,
+                    label: Text(
+                        _isSharing
+                            ? AppStrings.sharingLabel
+                            : AppStrings.shareLabel,
                         style: const TextStyle(fontWeight: FontWeight.w800)),
                     style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.green,
                         foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14))),
                   ),
                 ),
               ),
@@ -363,13 +448,15 @@ class _InspectionHistoryDetailScreenState extends State<InspectionHistoryDetailS
   }
 
   Color _statusColor(String s) => switch (s) {
-    'completed'    => AppColors.secondary,
-    'pending'      => AppColors.amber,
-    'rejected'     => AppColors.danger,
-    _              => AppColors.primary,
-  };
+        'completed' => AppColors.secondary,
+        'pending' => AppColors.amber,
+        'rejected' => AppColors.danger,
+        _ => AppColors.primary,
+      };
 
-  String _capitalize(String s) => s.isEmpty ? s : '${s[0].toUpperCase()}${s.substring(1).replaceAll('_', ' ')}';
+  String _capitalize(String s) => s.isEmpty
+      ? s
+      : '${s[0].toUpperCase()}${s.substring(1).replaceAll('_', ' ')}';
 }
 
 class _PlainSectionLabel extends StatelessWidget {
@@ -378,10 +465,14 @@ class _PlainSectionLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 8),
-    child: Text(label.toUpperCase(),
-        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textSecondary, letterSpacing: 0.6)),
-  );
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Text(label.toUpperCase(),
+            style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textSecondary,
+                letterSpacing: 0.6)),
+      );
 }
 
 class _PlainCard extends StatelessWidget {
@@ -390,16 +481,19 @@ class _PlainCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 16),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(14),
-      boxShadow: [
-        BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 12, offset: const Offset(0, 4)),
-      ],
-    ),
-    child: Column(children: children),
-  );
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withValues(alpha: 0.05),
+                blurRadius: 12,
+                offset: const Offset(0, 4)),
+          ],
+        ),
+        child: Column(children: children),
+      );
 }
 
 class _PlainRow extends StatelessWidget {
@@ -409,30 +503,50 @@ class _PlainRow extends StatelessWidget {
   final bool multiLine;
   final bool isLast;
 
-  const _PlainRow(this.label, this.value, {this.valueColor, this.multiLine = false, this.isLast = false});
+  const _PlainRow(this.label, this.value,
+      {this.valueColor, this.multiLine = false, this.isLast = false});
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 12),
       decoration: BoxDecoration(
-        border: isLast ? null : const Border(bottom: BorderSide(color: AppColors.divider)),
+        border: isLast
+            ? null
+            : const Border(bottom: BorderSide(color: AppColors.divider)),
       ),
       child: multiLine
           ? Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Expanded(flex: 2, child: Text(label, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary))),
+              Expanded(
+                  flex: 2,
+                  child: Text(label,
+                      style: const TextStyle(
+                          fontSize: 12, color: AppColors.textSecondary))),
               Expanded(
                 flex: 3,
-                child: Text(value, textAlign: TextAlign.right,
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: valueColor ?? AppColors.primary, height: 1.4)),
+                child: Text(value,
+                    textAlign: TextAlign.right,
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: valueColor ?? AppColors.primary,
+                        height: 1.4)),
               ),
             ])
           : Row(children: [
-              Expanded(flex: 2, child: Text(label, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary))),
+              Expanded(
+                  flex: 2,
+                  child: Text(label,
+                      style: const TextStyle(
+                          fontSize: 12, color: AppColors.textSecondary))),
               Expanded(
                 flex: 3,
-                child: Text(value, textAlign: TextAlign.right,
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: valueColor ?? AppColors.primary)),
+                child: Text(value,
+                    textAlign: TextAlign.right,
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: valueColor ?? AppColors.primary)),
               ),
             ]),
     );
@@ -443,44 +557,64 @@ class _StatBox extends StatelessWidget {
   final String value;
   final String label;
   final Color color;
-  const _StatBox({required this.value, required this.label, required this.color});
+  const _StatBox(
+      {required this.value, required this.label, required this.color});
 
   @override
   Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(vertical: 14),
-    decoration: BoxDecoration(
-      color: AppColors.appbg,
-      borderRadius: BorderRadius.circular(12),
-    ),
-    child: Column(
-      children: [
-        Text(value, style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: color)),
-        const SizedBox(height: 2),
-        Text(label, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-      ],
-    ),
-  );
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          color: AppColors.appbg,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          children: [
+            Text(value,
+                style: TextStyle(
+                    fontSize: 24, fontWeight: FontWeight.w800, color: color)),
+            const SizedBox(height: 2),
+            Text(label,
+                style: const TextStyle(
+                    fontSize: 12, color: AppColors.textSecondary)),
+          ],
+        ),
+      );
 }
 
 class _ChecklistRow extends StatelessWidget {
   final String item, response;
   final bool isOk;
   final bool isLast;
-  const _ChecklistRow({required this.item, required this.response, required this.isOk, this.isLast = false});
+  const _ChecklistRow(
+      {required this.item,
+      required this.response,
+      required this.isOk,
+      this.isLast = false});
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 12),
       decoration: BoxDecoration(
-        border: isLast ? null : const Border(bottom: BorderSide(color: AppColors.divider)),
+        border: isLast
+            ? null
+            : const Border(bottom: BorderSide(color: AppColors.divider)),
       ),
       child: Row(children: [
         Icon(isOk ? Icons.check_circle_rounded : Icons.cancel_rounded,
             color: isOk ? AppColors.green : AppColors.danger, size: 16),
         const SizedBox(width: 8),
-        Expanded(child: Text(item, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.primary))),
-        Text(response, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: isOk ? AppColors.green : AppColors.danger)),
+        Expanded(
+            child: Text(item,
+                style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.primary))),
+        Text(response,
+            style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: isOk ? AppColors.green : AppColors.danger)),
       ]),
     );
   }
@@ -488,27 +622,35 @@ class _ChecklistRow extends StatelessWidget {
 
 class _DefectRow extends StatelessWidget {
   final String category, severity, description;
-  const _DefectRow({required this.category, required this.severity, required this.description});
+  const _DefectRow(
+      {required this.category,
+      required this.severity,
+      required this.description});
 
   Color get _color => switch (severity.toLowerCase()) {
-    'critical' => AppColors.danger,
-    'high'     => const Color(0xFFEA580C),
-    'medium'   => AppColors.amber,
-    _          => AppColors.green,
-  };
+        'critical' => AppColors.danger,
+        'high' => const Color(0xFFEA580C),
+        'medium' => AppColors.amber,
+        _ => AppColors.green,
+      };
 
   @override
   Widget build(BuildContext context) {
-    final severityLabel = severity.isEmpty ? '' : '${severity[0].toUpperCase()}${severity.substring(1)}';
+    final severityLabel = severity.isEmpty
+        ? ''
+        : '${severity[0].toUpperCase()}${severity.substring(1)}';
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 12),
-      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.divider))),
+      decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: AppColors.divider))),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 32, height: 32,
-            decoration: BoxDecoration(color: _color.withValues(alpha: 0.12), shape: BoxShape.circle),
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+                color: _color.withValues(alpha: 0.12), shape: BoxShape.circle),
             child: Icon(Icons.circle, color: _color, size: 12),
           ),
           const SizedBox(width: 12),
@@ -516,16 +658,26 @@ class _DefectRow extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(category, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.primary)),
+                Text(category,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                        color: AppColors.primary)),
                 const SizedBox(height: 2),
-                Text(description, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                Text(description,
+                    style: const TextStyle(
+                        fontSize: 12, color: AppColors.textSecondary)),
               ],
             ),
           ),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(borderRadius: BorderRadius.circular(99), border: Border.all(color: _color)),
-            child: Text(severityLabel, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: _color)),
+            decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(99),
+                border: Border.all(color: _color)),
+            child: Text(severityLabel,
+                style: TextStyle(
+                    fontSize: 11, fontWeight: FontWeight.w700, color: _color)),
           ),
         ],
       ),
@@ -540,12 +692,20 @@ class _ErrorView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Center(
-    child: Padding(padding: const EdgeInsets.all(24), child: Column(mainAxisSize: MainAxisSize.min, children: [
-      const Icon(Icons.error_outline_rounded, size: 48, color: AppColors.textSecondary),
-      const SizedBox(height: 12),
-      Text(message, textAlign: TextAlign.center, style: const TextStyle(color: AppColors.textSecondary)),
-      const SizedBox(height: 16),
-      ElevatedButton.icon(onPressed: onRetry, icon: const Icon(Icons.refresh_rounded, size: 18), label: const Text(AppStrings.retryLabel)),
-    ])),
-  );
+        child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(Icons.error_outline_rounded,
+                  size: 48, color: AppColors.textSecondary),
+              const SizedBox(height: 12),
+              Text(message,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: AppColors.textSecondary)),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                  onPressed: onRetry,
+                  icon: const Icon(Icons.refresh_rounded, size: 18),
+                  label: const Text(AppStrings.retryLabel)),
+            ])),
+      );
 }
