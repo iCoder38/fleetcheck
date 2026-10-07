@@ -1,7 +1,7 @@
 name: fleetcheck
 description: FleetCheck - Inspect. Verify. Drive with Confidence.
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.1.4+5
 
 environment:
   sdk: '>=3.3.0 <4.0.0'

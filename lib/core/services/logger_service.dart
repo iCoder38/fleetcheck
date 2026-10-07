@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
+import '../constants/api_constants.dart';
 
 /// FleetCheck API Logger
 ///
@@ -31,13 +32,13 @@ class LoggerService {
   factory LoggerService() => _instance;
   LoggerService._internal();
 
-  static const int _maxBytes     = 2 * 1024 * 1024; // 2 MB
-  static const String _fileName  = 'fleetcheck_api.log';
-  static const String _bakName   = 'fleetcheck_api.log.bak';
+  static const int _maxBytes = 2 * 1024 * 1024; // 2 MB
+  static const String _fileName = 'fleetcheck_api.log';
+  static const String _bakName = 'fleetcheck_api.log.bak';
 
-  File?   _logFile;
-  File?   _bakFile;
-  bool    _ready = false;
+  File? _logFile;
+  File? _bakFile;
+  bool _ready = false;
 
   // ── Initialise ────────────────────────────────────────────────────────────
   Future<void> init() async {
@@ -45,7 +46,7 @@ class LoggerService {
       final dir = await getApplicationDocumentsDirectory();
       _logFile = File('${dir.path}/$_fileName');
       _bakFile = File('${dir.path}/$_bakName');
-      _ready   = true;
+      _ready = true;
 
       await _rotate();
       await _write(_sessionBanner());
@@ -65,7 +66,7 @@ class LoggerService {
     dynamic body,
   }) async {
     final masked = _maskHeaders(headers);
-    final bodyStr = _prettyJson(body);
+    final bodyStr = _prettyJson(_maskSensitiveData(body));
     final block = '''
 ┌─────────────────────────────────────────────────────────────
 │ ▶ REQUEST   ${_ts()}
@@ -87,8 +88,8 @@ ${_indent(bodyStr)}
     dynamic body,
     Map<String, dynamic>? headers,
   }) async {
-    final icon    = statusCode >= 200 && statusCode < 300 ? '✅' : '⚠️ ';
-    final bodyStr = _prettyJson(body);
+    final icon = statusCode >= 200 && statusCode < 300 ? '✅' : '⚠️ ';
+    final bodyStr = _prettyJson(_maskSensitiveData(body));
     final block = '''
 ┌─────────────────────────────────────────────────────────────
 │ $icon RESPONSE  ${_ts()}
@@ -108,7 +109,7 @@ ${_indent(bodyStr)}
     int? statusCode,
     dynamic responseBody,
   }) async {
-    final bodyStr = _prettyJson(responseBody);
+    final bodyStr = _prettyJson(_maskSensitiveData(responseBody));
     final block = '''
 ┌─────────────────────────────────────────────────────────────
 │ ❌ ERROR     ${_ts()}
@@ -161,7 +162,7 @@ ${responseBody != null ? '│ Response Body:\n${_indent(bodyStr)}' : ''}
   String _sessionBanner() => '''
 ╔═════════════════════════════════════════════════════════════╗
 ║  FleetCheck API Log — Session started ${_ts()}
-║  Base URL: API_BASE_URL_PLACEHOLDER
+║  Base URL: ${ApiConstants.baseUrl}
 ╚═════════════════════════════════════════════════════════════╝
 
 ''';
@@ -179,17 +180,53 @@ ${responseBody != null ? '│ Response Body:\n${_indent(bodyStr)}' : ''}
     return _prettyJson(copy);
   }
 
+  /// Keeps diagnostic payloads useful without printing credentials or tokens.
+  dynamic _maskSensitiveData(dynamic value) {
+    const sensitiveKeys = {
+      'password',
+      'confirm_password',
+      'current_password',
+      'new_password',
+      'token',
+      'access_token',
+      'refresh_token',
+      'reset_token',
+    };
+
+    if (value is Map) {
+      return value.map((key, item) {
+        final normalizedKey = key.toString().toLowerCase();
+        return MapEntry(
+          key,
+          sensitiveKeys.contains(normalizedKey)
+              ? '***MASKED***'
+              : _maskSensitiveData(item),
+        );
+      });
+    }
+    if (value is List) {
+      return value.map(_maskSensitiveData).toList();
+    }
+    return value;
+  }
+
   String _prettyJson(dynamic obj) {
     if (obj == null) return '  (none)';
     try {
       if (obj is String) {
         // Try to parse and re-pretty if it looks like JSON
         final decoded = jsonDecode(obj);
-        return const JsonEncoder.withIndent('  ').convert(decoded)
-            .split('\n').map((l) => '  $l').join('\n');
+        return const JsonEncoder.withIndent('  ')
+            .convert(decoded)
+            .split('\n')
+            .map((l) => '  $l')
+            .join('\n');
       }
-      return const JsonEncoder.withIndent('  ').convert(obj)
-          .split('\n').map((l) => '  $l').join('\n');
+      return const JsonEncoder.withIndent('  ')
+          .convert(obj)
+          .split('\n')
+          .map((l) => '  $l')
+          .join('\n');
     } catch (_) {
       return '  ${obj.toString().replaceAll('\n', '\n  ')}';
     }

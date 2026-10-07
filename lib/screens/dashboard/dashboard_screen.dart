@@ -45,30 +45,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
         return Scaffold(
           backgroundColor: AppColors.appbg,
           body: RefreshIndicator(
-            onRefresh: () async {
-              context.read<DashboardBloc>().add(DashboardLoadRequested());
-              await context
-                  .read<DashboardBloc>()
-                  .stream
-                  .firstWhere((s) => s is DashboardLoaded);
-            },
-            color: AppColors.secondary,
-            child: Column(
-              children: [
-                _buildHeader(
-                    context, loaded.driver, loaded.recent.isNotEmpty),
-                Expanded(child: CustomScrollView(
-                  slivers: [
-                    SliverToBoxAdapter(child: _buildStats(loaded.stats)),
-                    SliverToBoxAdapter(child: _buildRecentActivity(loaded.recent)),
-                    SliverToBoxAdapter(
-                        child: SizedBox(
-                            height: AppResponsive.spacing(context, 100))),
-                  ],
-                ),)
-              ],
-            )
-          ),
+              onRefresh: () async {
+                context.read<DashboardBloc>().add(DashboardLoadRequested());
+                await context
+                    .read<DashboardBloc>()
+                    .stream
+                    .firstWhere((s) => s is DashboardLoaded);
+              },
+              color: AppColors.secondary,
+              child: Column(
+                children: [
+                  _buildHeader(
+                      context, loaded.driver, loaded.recent.isNotEmpty),
+                  Expanded(
+                    child: CustomScrollView(
+                      slivers: [
+                        SliverToBoxAdapter(child: _buildStats(loaded.stats)),
+                        SliverToBoxAdapter(
+                            child: _buildRecentActivity(loaded.recent)),
+                        SliverToBoxAdapter(
+                            child: SizedBox(
+                                height: AppResponsive.spacing(context, 100))),
+                      ],
+                    ),
+                  )
+                ],
+              )),
         );
       },
     );
@@ -277,9 +279,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
     ];
 
     return Padding(
-      padding: EdgeInsets.fromLTRB(AppResponsive.padding(context, 20),
+      padding: EdgeInsets.fromLTRB(
           AppResponsive.padding(context, 20),
-          AppResponsive.padding(context, 20), 0),
+          AppResponsive.padding(context, 20),
+          AppResponsive.padding(context, 20),
+          0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -306,7 +310,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
             crossAxisCount: 2,
             crossAxisSpacing: AppResponsive.spacing(context, 12),
             mainAxisSpacing: AppResponsive.spacing(context, 12),
-            childAspectRatio: 2,
+            // Give the value + label enough vertical room on compact Android
+            // screens and when the user has increased the system font size.
+            mainAxisExtent: AppResponsive.scale(context, 92),
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             children: boxes.map((b) => _StatCard(box: b)).toList(),
@@ -318,9 +324,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   // ─── Recent activity ─────────────────────────────────────
   Widget _buildRecentActivity(List<ActivityItem> recent) => Padding(
-        padding: EdgeInsets.fromLTRB(AppResponsive.padding(context, 20),
+        padding: EdgeInsets.fromLTRB(
             AppResponsive.padding(context, 20),
-            AppResponsive.padding(context, 20), 0),
+            AppResponsive.padding(context, 20),
+            AppResponsive.padding(context, 20),
+            0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -416,7 +424,7 @@ class _Pill extends StatelessWidget {
 
 class _StatCard extends StatelessWidget {
   final _StatBox box;
-  const _StatCard({super.key, required this.box});
+  const _StatCard({required this.box});
   @override
   Widget build(BuildContext context) => Container(
         padding: EdgeInsets.all(AppResponsive.padding(context, 16)),
@@ -448,11 +456,15 @@ class _StatCard extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text('${box.value}',
+                      // AppResponsive.text already includes the device text
+                      // scale, so prevent Flutter from applying it twice.
+                      textScaler: TextScaler.noScaling,
                       style: TextStyle(
                           fontSize: AppResponsive.text(context, 24),
                           fontWeight: FontWeight.w800,
                           color: box.color)),
                   Text(box.label,
+                      textScaler: TextScaler.noScaling,
                       style: TextStyle(
                           fontSize: AppResponsive.text(context, 11),
                           color: AppColors.textSecondary,
